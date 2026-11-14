@@ -1,15 +1,18 @@
-# CarMediaPlayer — MG4 build
+# VibeMediaPlayer — MG4 build
 
 A fork of lkernan/CarMediaPlayer for the MG4 (SAIC head unit, firmware
 `1100 SWI131 R27 09.08.24`).  It **replaces the stock media app**
 (`com.saicmotor.media`, shared system UID, signed with the AOSP test platform
-key) and plays **only from a Navidrome server**.
+key) and plays **only from a Navidrome server**.  It was called
+CarMediaPlayer itself up to 1.0.15 ("vibe": it's written with Claude); the
+repository is MintiesJZ/VibeMediaPlayer, and GitHub sends the old address on.
 
 ## Releases
 
 - A release is the signed APK, published as a GitHub release on this repo:
   tag `v<versionName>`, the APK attached as
-  `CarMediaPlayer-<versionName>-MG4-platform-signed.apk`.  The **Release**
+  `VibeMediaPlayer-<versionName>-MG4-platform-signed.apk` (and again as
+  `CarMediaPlayer-…`, the name versions up to 1.0.16-pre2 ask for).  The **Release**
   workflow (`.github/workflows/release.yml`) does this by itself when a push
   to `master` carries a versionName that has no release yet: it builds, runs
   the tests, signs with the AOSP test key (downloaded, checked against the
@@ -42,6 +45,9 @@ key) and plays **only from a Navidrome server**.
   one per change, no explanations (e.g. "- Autoplay when car starts.").
 - Commit to `master`.  Changes are never pushed to lkernan/CarMediaPlayer
   (the upstream project).
+- Commit messages end with the `Co-Authored-By: Claude …` line and nothing
+  after it: **no `Claude-Session:` line** (the owner doesn't want the
+  session's address in the history).
 - Bug reports come as a logcat from the car, sometimes with Navidrome server
   logs.  The app logs under tag `CarMedia`; the SAIC launcher logs as
   `MediaView`, `SwcManager`, `LauncherService`, `HardKeyService`.
@@ -229,9 +235,10 @@ are the main thread here.
   pass is at 15.1–15.5 s, the launcher asks at ~16 s and the music plays
   1.1–1.5 s after that — nearly all of it first-time work on a busy head
   unit, where a couple of hundred songs take a few tenths of a second to
-  turn into a queue.)  One thing is done ahead: the saved queue's small file is read on
-  a thread at the lowest priority (`readSavedQueueAhead`), and used when the
-  launcher asks if it's done by then; it never touches the player.
+  turn into a queue.)  One thing is done ahead: the saved queue's small
+  file is read on a thread at the lowest priority (`readSavedQueueAhead`),
+  and used when the launcher asks if it's done by then; it never touches
+  the player.
   In a logcat: `LAU.EvBatteryView: onChargePercentChange: percent: 98,range=-1,…`
   is orange, `range=0` green; `[CarAdapterSettingManager]
   ID_IMCU_VEHICLE_ELECTRIC_RANGE_DSP_CMD = 0` is the signal being heard.
@@ -239,7 +246,8 @@ are the main thread here.
 ## Navidrome
 
 - Navidrome identifies a "player" by client name + User-Agent and sets
-  transcoding per player (this app shows up as "CarMediaPlayer [Dalvik/Android]").
+  transcoding per player (this app shows up as "CarMediaPlayer [Dalvik/Android]":
+  the project's old name, kept as the client name for that reason).
   **Don't set a custom User-Agent** on stream requests: it creates a new
   player with no transcoding (FLAC).  Cache key is `song-v2:<id>` for that reason.
 - Transcoded streams have no Content-Length and don't support ranges: every

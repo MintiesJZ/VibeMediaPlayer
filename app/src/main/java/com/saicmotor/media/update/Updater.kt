@@ -38,7 +38,7 @@ import java.net.URL
 object Updater {
 
     /** Where releases are published: a tag "v<versionName>" with the signed APK attached. */
-    const val REPO = "MintiesJZ/CarMediaPlayer"
+    const val REPO = "MintiesJZ/VibeMediaPlayer"
 
     /**
      * The repository's releases.  GitHub sends "…/releases/latest" on to the
@@ -52,7 +52,7 @@ object Updater {
     internal var releases = "https://github.com/$REPO/releases"
 
     /** The APK attached to release [version], as the Release workflow names it. */
-    private fun apkName(version: String) = "CarMediaPlayer-$version-MG4-platform-signed.apk"
+    private fun apkName(version: String) = "VibeMediaPlayer-$version-MG4-platform-signed.apk"
 
     private const val TAG = "CarMedia.Update"
 
@@ -138,7 +138,7 @@ object Updater {
             connectTimeout = 15_000
             readTimeout    = 30_000
             instanceFollowRedirects = followRedirects   // release files redirect to GitHub's file host
-            setRequestProperty("User-Agent", "CarMediaPlayer-updater")
+            setRequestProperty("User-Agent", "VibeMediaPlayer-updater")
         }
 
     /**
@@ -206,7 +206,7 @@ object Updater {
         val dir = File(context.cacheDir, "update")
         dir.deleteRecursively()
         dir.mkdirs()
-        val file = File(dir, "CarMediaPlayer-${release.version}.apk")
+        val file = File(dir, "VibeMediaPlayer-${release.version}.apk")
         _status.value = Status.Downloading(release.version, 0)
         val conn = open(release.apkUrl)
         try {

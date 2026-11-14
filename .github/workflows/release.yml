@@ -137,6 +137,11 @@ jobs:
             *-*) kind="--prerelease --latest=false" ;;
             *)   kind="--latest" ;;
           esac
-          gh release create "v$VERSION" "dist/CarMediaPlayer-$VERSION-MG4-platform-signed.apk" \
+          apk="dist/VibeMediaPlayer-$VERSION-MG4-platform-signed.apk"
+          # Also under the project's old name: versions up to 1.0.16-pre2 ask
+          # for the APK by it when they check for updates.
+          old="dist/CarMediaPlayer-$VERSION-MG4-platform-signed.apk"
+          cp "$apk" "$old"
+          gh release create "v$VERSION" "$apk" "$old" \
             -R "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" \
             --title "$VERSION" --notes-file notes.md $kind

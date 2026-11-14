@@ -14,7 +14,7 @@ keys="${1:?keys dir}"; out="${2:?output dir}"
 apksigner="${APKSIGNER:-apksigner}"
 version=$(sed -n 's/.*versionName *"\(.*\)".*/\1/p' "$here/../app/build.gradle" | head -1)
 in="$here/buildcheck/app/build/outputs/apk/release/app-release-unsigned.apk"
-dest="$out/CarMediaPlayer-$version-MG4-platform-signed.apk"
+dest="$out/VibeMediaPlayer-$version-MG4-platform-signed.apk"
 mkdir -p "$out"
 "$apksigner" sign --key "$keys/platform.pk8" --cert "$keys/platform.x509.pem" --out "$dest" "$in"
 rm -f "$dest.idsig"

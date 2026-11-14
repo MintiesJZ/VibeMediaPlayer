@@ -1,4 +1,4 @@
-## CarMediaPlayer
+## VibeMediaPlayer
 A replacement for the stock media player in my MG4 Excite 51, for streaming from a Navidrome (Subsonic) server.
 
 Installs over the stock media player and maintains the correct requirements for the launcher and system to still interact with it.

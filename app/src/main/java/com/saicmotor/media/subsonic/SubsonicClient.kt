@@ -84,6 +84,12 @@ object SubsonicClient {
 
     private const val TAG         = "CarMedia.Subsonic"
     private const val API_VERSION = "1.16.1"
+    /**
+     * The project's old name, kept: Navidrome knows the car's "player" by
+     * this name (and the User-Agent), and its transcoding is set per
+     * player.  Under another name the car would be a new player with no
+     * transcoding, sent the original files.
+     */
     private const val CLIENT_NAME = "CarMediaPlayer"
 
     /** getAlbumList2 returns at most 500 per call; we page past that. */

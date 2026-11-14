@@ -542,7 +542,7 @@ class ServiceTest {
             u.releases = "$site/Someone/App/releases"
             val latest = u.fetchLatest()
             assertEquals("3.4.5", latest.version)
-            assertEquals("$site/Someone/App/releases/download/v3.4.5/CarMediaPlayer-3.4.5-MG4-platform-signed.apk", latest.apkUrl)
+            assertEquals("$site/Someone/App/releases/download/v3.4.5/VibeMediaPlayer-3.4.5-MG4-platform-signed.apk", latest.apkUrl)
             u.releases = "$site/Old/Name/releases"
             assertEquals("followed to its new name", "3.4.5", u.fetchLatest().version)
             u.releases = "$site/Someone/Empty/releases"
@@ -560,7 +560,7 @@ class ServiceTest {
         val u = com.saicmotor.media.update.Updater
         val r = u.latestFrom("https://github.com/${u.REPO}/releases/tag/v2.0.10")!!
         assertEquals("2.0.10", r.version)
-        assertEquals("https://github.com/${u.REPO}/releases/download/v2.0.10/CarMediaPlayer-2.0.10-MG4-platform-signed.apk", r.apkUrl)
+        assertEquals("https://github.com/${u.REPO}/releases/download/v2.0.10/VibeMediaPlayer-2.0.10-MG4-platform-signed.apk", r.apkUrl)
         assertEquals("2.1", u.latestFrom("https://github.com/${u.REPO}/releases/tag/2.1/")!!.version)
         assertEquals("nothing published: sent to the list of releases", null, u.latestFrom("https://github.com/${u.REPO}/releases"))
         assertEquals("not a tag", null, u.latestFrom("https://github.com/${u.REPO}/releases/tag/../../x"))

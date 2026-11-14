@@ -88,7 +88,7 @@
     <string name="startup_shuffle_body">A fresh shuffle every time.</string>
     <string name="startup_nothing">Don\'t play anything</string>
     <string name="startup_nothing_body">Music starts when you press play.</string>
-    <string name="settings_version">CarMediaPlayer %s</string>
+    <string name="settings_version">VibeMediaPlayer %s</string>
     <!-- Settings → updates (only checked when the button is pressed) -->
     <string name="update_heading">Updates</string>
     <string name="update_check">Check for updates</string>
