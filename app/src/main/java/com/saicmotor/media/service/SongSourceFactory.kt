@@ -21,6 +21,7 @@ import androidx.media3.extractor.ExtractorsFactory
 import androidx.media3.extractor.PositionHolder
 import androidx.media3.extractor.SeekMap
 import androidx.media3.extractor.TrackOutput
+import androidx.media3.extractor.ogg.OggExtractor
 
 /**
  * Builds the player's source for each song, telling it how long the song is
@@ -116,9 +117,23 @@ internal class KnownDurationExtractors(
     override fun createExtractors(uri: Uri, responseHeaders: Map<String, List<String>>): Array<Extractor> =
         wrap(all.createExtractors(uri, responseHeaders))
 
-    private fun wrap(extractors: Array<Extractor>): Array<Extractor> =
-        if (durationUs == C.TIME_UNSET) extractors
+    private fun wrap(all: Array<Extractor>): Array<Extractor> {
+        val extractors = oggFirst(all)
+        return if (durationUs == C.TIME_UNSET) extractors
         else Array(extractors.size) { KnownDurationExtractor(extractors[it], durationUs, onCutShort) }
+    }
+
+    /**
+     * Ogg is tried first: it's what Navidrome sends the car (Opus), and a
+     * song read back from the cache comes with nothing to say what it is,
+     * so seven other readers each had a look at it first.  Anything else
+     * (a song sent as it is) is still found by the reader after.
+     */
+    private fun oggFirst(extractors: Array<Extractor>): Array<Extractor> {
+        val ogg = extractors.indexOfFirst { it is OggExtractor }
+        if (ogg <= 0) return extractors
+        return Array(extractors.size) { i -> if (i == 0) extractors[ogg] else if (i <= ogg) extractors[i - 1] else extractors[i] }
+    }
 }
 
 @OptIn(UnstableApi::class)

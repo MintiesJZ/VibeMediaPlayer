@@ -356,6 +356,48 @@ class ServiceTest {
     }
 
     /**
+     * The song to play is loading before the rest of the queue goes in
+     * around it: on the head unit, as the car starts, a couple of hundred
+     * songs (and telling the car about them) took half a second, and the
+     * music waited for it.
+     */
+    @Test
+    fun theSongToPlayIsLoadingBeforeTheRestOfTheQueueGoesIn() {
+        savePlayingState()
+        val s = service()
+        val p = s.player()
+        val seen = ArrayList<String>()
+        p.addListener(object : androidx.media3.common.Player.Listener {
+            override fun onTimelineChanged(timeline: androidx.media3.common.Timeline, reason: Int) {
+                val loading = p.playbackState != androidx.media3.common.Player.STATE_IDLE
+                seen += "${timeline.windowCount} song(s), ${p.currentMediaItem?.mediaId} at ${p.currentMediaItemIndex}, ${if (loading) "loading" else "idle"}"
+            }
+        })
+        s.restoredByLauncher()
+        assertEquals("sub:s3 alone first: $seen", "1 song(s), sub:s3 at 0, idle", seen.first())
+        assertTrue("loading by the time the others go in: $seen", seen.drop(1).all { it.endsWith("loading") })
+        assertTrue("$seen", seen.last().startsWith("8 song(s), sub:s3 at 3"))
+        // The queue's as it was saved, and the car's told once it's all in.
+        assertEquals((0 until 8).map { "sub:s$it" }, (0 until p.mediaItemCount).map { p.getMediaItemAt(it).mediaId })
+        assertEquals(42_000L, p.currentPosition)
+        assertTrue(p.playWhenReady)
+        assertEquals("sub:s3", ResumeStore(app).load()!!.item?.mediaId)
+        idle(2_000)
+        assertEquals("the queue's kept as it is", 8, ResumeStore(app).loadSnapshot().size)
+    }
+
+    /** Ogg (what Navidrome sends the car) is the first kind of file tried; the others are all still there. */
+    @Test
+    fun oggIsTheFirstKindOfFileTried() {
+        val usual = androidx.media3.extractor.DefaultExtractorsFactory().createExtractors().map { it.javaClass }
+        val ours = com.saicmotor.media.service.KnownDurationExtractors(androidx.media3.common.C.TIME_UNSET).createExtractors().map { it.javaClass }
+        assertEquals(androidx.media3.extractor.ogg.OggExtractor::class.java, ours.first())
+        assertEquals(usual.toSet(), ours.toSet())
+        assertEquals(usual.size, ours.size)
+        assertEquals("the rest in their usual order", usual.filter { it != ours.first() }, ours.drop(1))
+    }
+
+    /**
      * Woken from sleep, the car's services are already running: the queue
      * is got ready (paused) for the launcher's "play" a few seconds later.
      */

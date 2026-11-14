@@ -54,7 +54,7 @@ key) and plays **only from a Navidrome server**.
 
 `tools/buildcheck` builds the app's sources with the same dependencies as
 `app/build.gradle` and runs the Robolectric tests in `tools/buildcheck/tests`
-(44 service tests, 25 streaming tests, 3 for `LiveDownload`, 21 screenshot tests →
+(46 service tests, 25 streaming tests, 3 for `LiveDownload`, 21 screenshot tests →
 `tools/buildcheck/app/build/shots`, 7 against a real Navidrome, skipped
 unless one is running: `tools/navidrome/README.md`, and 33 with the car's own
 launcher — 7 of them with SmartTube too — skipped unless their APKs are
@@ -225,10 +225,11 @@ are the main thread here.
   service was started (player, decoder and audio track, 12–15 s after boot),
   the adapter service ran a second late and the launcher asked a second
   later too — no sooner for the music, and an orange battery most days.
-  (Since: the adapter service subscribes ~14.5 s after boot, the HAL's pass
-  is at 15.1–15.4 s, the launcher asks at ~15.8 s and the music plays
-  ~1.5 s after that — nearly all of it first-time work on a busy head
-  unit.)  One thing is done ahead: the saved queue's small file is read on
+  (Since: the adapter service subscribes 14.5–14.9 s after boot, the HAL's
+  pass is at 15.1–15.5 s, the launcher asks at ~16 s and the music plays
+  1.1–1.5 s after that — nearly all of it first-time work on a busy head
+  unit, where a couple of hundred songs take a few tenths of a second to
+  turn into a queue.)  One thing is done ahead: the saved queue's small file is read on
   a thread at the lowest priority (`readSavedQueueAhead`), and used when the
   launcher asks if it's done by then; it never touches the player.
   In a logcat: `LAU.EvBatteryView: onChargePercentChange: percent: 98,range=-1,…`
@@ -269,6 +270,15 @@ are the main thread here.
 
 - Media3 1.3.1 ExoPlayer over a 400 MB SimpleCache (`service/MediaCache.kt`,
   512 KB fragments so a power cut loses little).
+- A queue goes into the player a song at a time (`playQueue`): the song
+  to play first, and the player told to load it, then the rest around it.
+  What's done when the song, the queue or the player's state changes
+  (telling the car, the notification, the widgets, saving) waits until
+  it's all in and is done once (`settingQueue`, `songChanged`).  All at
+  once, the music waited half a second for it when the car started.
+- Ogg is the first kind of file tried for a song (`KnownDurationExtractors`):
+  one read back from the cache comes with nothing to say what it is, and
+  seven other readers each had a look first.
 - A continuous downloader fetches the next 10 songs while playing
   (`startDownloader`), pausing while the current song has < 10 s buffered.
 - A song that comes up while the look-ahead is still downloading it (a skip,
@@ -346,8 +356,9 @@ are the main thread here.
   reported (half-way, or four minutes), was reported before the car was
   switched off: not again (`startPlayReport`).
 - The log shows how each start-up went ("Startup timing: …": when the
-  launcher asked, the saved queue was read, the queue was back in the
-  player, the first song had loaded, and the music played).
+  launcher asked, the saved queue was read, the player was told to load the
+  first song, the whole queue was back in the player, the song had loaded,
+  and the music played).
 - The head unit's network passes nothing for most of the first minute after
   it boots (and the server may not be reachable for a while after that):
   the music plays from disk meanwhile and look-ahead downloads are tried

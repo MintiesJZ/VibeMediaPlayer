@@ -417,6 +417,7 @@ class MediaService : MediaBrowserServiceCompat() {
     private var traceQueueAt    = -1L
     private var traceLauncherAt = -1L
     private var traceReadAt     = -1L   // the saved queue read
+    private var traceLoadingAt  = -1L   // the player told to load the first song
     private var traceLoadedAt   = -1L   // the first song loaded far enough to play
     private var traceOnDiskPct  = -1
     /** Music was started for the driver (launcher or boot fallback), not by a press. */
@@ -1022,6 +1023,7 @@ class MediaService : MediaBrowserServiceCompat() {
 
     private val playerListener = object : Player.Listener {
         override fun onIsPlayingChanged(isPlaying: Boolean) {
+            if (settingQueue) return
             if (isPlaying) {
                 requestMediaFocus()
                 claimMediaKeys("playback started")
@@ -1036,6 +1038,7 @@ class MediaService : MediaBrowserServiceCompat() {
             pushWidgets()
         }
         override fun onPlaybackStateChanged(playbackState: Int) {
+            if (settingQueue) return
             if (playbackState == Player.STATE_READY) {
                 traceSongLoaded()
                 streamRetries = 0
@@ -1058,28 +1061,17 @@ class MediaService : MediaBrowserServiceCompat() {
             notePlaying()
         }
         override fun onMediaItemTransition(item: MediaItem?, reason: Int) {
-            // Use the item passed directly: player.mediaMetadata may not have
-            // settled yet when this fires.
-            session.setMetadata(buildMetadata(item))
-            session.setPlaybackState(buildPlaybackState())
-            refreshNotification()
-            pushWidgets()
-            // currentPosition, not 0: when resuming mid-track this fires with
-            // the player already at the resume point.
-            saveCurrentItem(item, player.currentPosition)
-            Log.i(TAG, "Now playing: ${item?.mediaMetadata?.title} — ${item?.mediaMetadata?.artist}")
-            stopFastSeek()
-            startPlayReport(item)
-            topUpLibraryQueueIfLow()
-            scheduleLookAhead()
-            saveSnapshotSoon()
+            if (settingQueue) return
+            songChanged(item)
         }
         override fun onMediaMetadataChanged(mediaMetadata: androidx.media3.common.MediaMetadata) {
+            if (settingQueue) return
             session.setMetadata(buildMetadata())
             refreshNotification()
             pushWidgets()
         }
         override fun onTimelineChanged(timeline: Timeline, reason: Int) {
+            if (settingQueue) return
             publishQueue()
             if (reason == Player.TIMELINE_CHANGE_REASON_PLAYLIST_CHANGED) {
                 saveSnapshotSoon()
@@ -1110,6 +1102,31 @@ class MediaService : MediaBrowserServiceCompat() {
             recoverFromError(error)
             session.setPlaybackState(buildPlaybackState())
         }
+    }
+
+    /**
+     * True while [playQueue] is putting a queue in the player, piece by
+     * piece: what's done when the song, the queue or the player's state
+     * changes waits until it's all in, and is done once ([songChanged]).
+     */
+    private var settingQueue = false
+
+    /** Another song is the one playing (or about to): tell the car, keep it for next time, look ahead. */
+    private fun songChanged(item: MediaItem?, durationMs: Long? = null) {
+        // The item itself: player.mediaMetadata may not have settled yet.
+        session.setMetadata(buildMetadata(item, durationMs))
+        session.setPlaybackState(buildPlaybackState())
+        refreshNotification()
+        pushWidgets()
+        // currentPosition, not 0: when resuming mid-track the player is
+        // already at the resume point.
+        saveCurrentItem(item, player.currentPosition)
+        Log.i(TAG, "Now playing: ${item?.mediaMetadata?.title} — ${item?.mediaMetadata?.artist}")
+        stopFastSeek()
+        startPlayReport(item)
+        topUpLibraryQueueIfLow()
+        scheduleLookAhead()
+        saveSnapshotSoon()
     }
 
     // ── Errors and lost network ────────────────────────────────────────────
@@ -2134,26 +2151,35 @@ class MediaService : MediaBrowserServiceCompat() {
         stopFastSeek()
 
         val start = startIndex.coerceIn(0, items.size - 1)
-        // The player first: it loads the song on its own threads while the
-        // rest of this is done here (when the car starts, each step takes
-        // its time, and the music was waiting for all of them).
-        player.setMediaItems(items, start, startPositionMs)
-        applyShuffleOrder(start)
-        player.prepare()
-        // The metadata straight away, so the launcher sees the right title
-        // before ExoPlayer's callbacks arrive.
+        // The song to play goes in on its own and the player's told to load
+        // it at once, on its own threads; the rest of the queue is put
+        // around it, and everything else here done, while it loads.  (When
+        // the car starts every step takes its time on the head unit — a
+        // couple of hundred songs alone are a few tenths of a second — and
+        // the music was waiting for all of them.)
+        settingQueue = true
+        try {
+            player.setMediaItem(items[start], startPositionMs)
+            player.prepare()
+            traceLoading()
+            if (start > 0) player.addMediaItems(0, items.subList(0, start))
+            if (start < items.size - 1) player.addMediaItems(start + 1, items.subList(start + 1, items.size))
+            applyShuffleOrder(start)
+        } finally {
+            settingQueue = false
+        }
+        // The title before "playing", as the launcher expects them.
         session.setMetadata(buildMetadata(items[start], durationMs = durationHintMs))
-
         resumeStore.saveQueue(ONLINE_ROOT, kind, parentId)
-        saveCurrentItem(items[start], startPositionMs)
         traceQueueReady(items[start].mediaId)
 
         // Take focus before play() so we own the speakers even if another
         // source had them.  If it's refused (e.g. a phone call), load the
         // queue but stay paused.
         if (play && requestMediaFocus()) player.play() else player.pause()
+        songChanged(items[start], durationHintMs)
+        notePlaying()
         publishQueue()
-        topUpLibraryQueueIfLow()
     }
 
     /**
@@ -2534,6 +2560,7 @@ class MediaService : MediaBrowserServiceCompat() {
         traceQueueAt    = -1L
         traceLauncherAt = -1L
         traceReadAt     = -1L
+        traceLoadingAt  = -1L
         traceLoadedAt   = -1L
         traceOnDiskPct  = -1
         traceAuto       = false
@@ -2546,6 +2573,10 @@ class MediaService : MediaBrowserServiceCompat() {
 
     private fun traceQueueRead() {
         if (traceFrom >= 0 && traceReadAt < 0) traceReadAt = SystemClock.elapsedRealtime()
+    }
+
+    private fun traceLoading() {
+        if (traceFrom >= 0 && traceLoadingAt < 0) traceLoadingAt = SystemClock.elapsedRealtime()
     }
 
     private fun traceSongLoaded() {
@@ -2572,7 +2603,7 @@ class MediaService : MediaBrowserServiceCompat() {
         fun rel(t: Long) = if (t >= 0) t - from else -1L
         val onDisk = if (traceOnDiskPct == PARTLY) "partly" else "$traceOnDiskPct%"
         Log.i(TAG, "Startup timing: launcher asked ${rel(traceLauncherAt)} ms, queue read ${rel(traceReadAt)} ms, " +
-            "queue back ${rel(traceQueueAt)} ms, song loaded ${rel(traceLoadedAt)} ms, " +
+            "song loading from ${rel(traceLoadingAt)} ms, queue back ${rel(traceQueueAt)} ms, song loaded ${rel(traceLoadedAt)} ms, " +
             "playing ${now - from} ms after the head unit started; first song $onDisk on disk")
     }
 
