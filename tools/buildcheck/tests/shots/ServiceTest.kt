@@ -1073,6 +1073,7 @@ class ServiceTest {
     fun skipKeysPressSkipsHoldSeeksAndPreviousRestartsTheSong() {
         savePlayingState()
         val s = service()
+        s.onDiskForTest = { true }         // (a song that isn't, and hasn't loaded, can't be skipped ahead in)
         s.restoredByLauncher()
         val p = s.player()
         val handle = { e: KeyEvent -> s.call("handleMediaKey", e); idle(1) }
@@ -1119,6 +1120,7 @@ class ServiceTest {
     fun launcherFastForwardRunsUntilStopped() {
         savePlayingState()
         val s = service()
+        s.onDiskForTest = { true }         // (a song that isn't, and hasn't loaded, can't be skipped ahead in)
         s.restoredByLauncher()
         val p = s.player()
         val start = p.currentPosition

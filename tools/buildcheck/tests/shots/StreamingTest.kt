@@ -815,6 +815,66 @@ class StreamingTest {
         assertTrue("nothing's left open when the app stops", server.streamRequests(ids[1]).all { it.hungUp })
     }
 
+    /**
+     * Holding a skip key in a song doesn't ask the server for the next song
+     * at every step.  The player gets the next song ready ahead of its turn
+     * and starts that over at each skip within the one playing: a request
+     * each time, hung up on half a second later — in the car, on mobile
+     * data, they queued up behind each other and the next song took 13 s to
+     * start.  It's asked for once the skipping has stopped.
+     */
+    @Test
+    fun holdingASkipKeyDoesntAskForTheNextSongAtEveryStep() {
+        server.addSongs(1, seconds = 30)
+        server.addSongs(2, seconds = 300)
+        server.bytesPerSecond = 200_000                       // the next song takes a while to come
+        val ids = server.songs.keys.toList()
+        val s = startPlaying()
+        val p = s.player()
+        drive(s, 10_000, until = { heard.size >= 50 })
+        // Paused: nothing is downloaded ahead, so it's the player that gets the next song ready.
+        p.pause()
+        drive(s, 60_000, until = { MediaCache.isCached(app, "sub:${ids[0]}") && server.streamRequests(ids[1]).isNotEmpty() })
+        assertEquals("the next song is being got ready", 1, server.streamRequests(ids[1]).size)
+        repeat(6) {
+            assertTrue(s.seekBy(2_000L))
+            drive(s, 500)                                     // (well under half a second of real time)
+        }
+        assertEquals("not asked for again while the key's held", 1, server.streamRequests(ids[1]).size)
+        val until = System.currentTimeMillis() + 3_000
+        while (System.currentTimeMillis() < until && server.streamRequests(ids[1]).size < 2) drive(s, 100)
+        drive(s, 2_000)
+        assertEquals("asked for once more, when the skipping stopped", 2, server.streamRequests(ids[1]).size)
+        p.play()
+        p.seekToNextMediaItem()
+        heard.clear()
+        drive(s, 20_000, until = { heard.count { it.first == 1 } >= 100 })
+        assertTrue("and it plays when its turn comes", heard.count { it.first == 1 } >= 100)
+        s.onDestroy()
+    }
+
+    /**
+     * A song that hasn't begun to arrive isn't skipped ahead in: the player
+     * would take the place asked for as where to start, and wait in silence
+     * for the song to come down that far.  It plays from its beginning.
+     */
+    @Test
+    fun aSongThatHasntLoadedYetIsntSkippedAheadIn() {
+        server.addSongs(2, seconds = 300)
+        server.plan = { song, attempt -> if (song == 0 && attempt == 1) FakeNavidrome.Reply.StallAfter(0, 2_000) else FakeNavidrome.Reply.Whole }
+        val s = startPlaying()
+        val p = s.player()
+        drive(s, 200)
+        assertTrue("nothing of it has come yet", heard.isEmpty())
+        assertTrue("skipping ahead is refused", !s.seekBy(5_000L))
+        assertTrue(!s.seekBy(5_000L))
+        assertEquals(0L, p.currentPosition)
+        drive(s, 60_000, until = { heard.size >= 100 })
+        assertTrue("it plays", heard.size >= 100)
+        assertEquals("from its beginning", 0 to 0, heard.first())
+        s.onDestroy()
+    }
+
     private fun MediaService.seekBy(ms: Long): Boolean =
         MediaService::class.java.getDeclaredMethod("seekBy", Long::class.javaPrimitiveType)
             .apply { isAccessible = true }.invoke(this, ms) as Boolean

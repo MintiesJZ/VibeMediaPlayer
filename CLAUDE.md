@@ -62,7 +62,7 @@ repository is MintiesJZ/VibeMediaPlayer, and GitHub sends the old address on.
 
 `tools/buildcheck` builds the app's sources with the same dependencies as
 `app/build.gradle` and runs the Robolectric tests in `tools/buildcheck/tests`
-(48 service tests, 29 streaming tests, 3 for `LiveDownload`, 21 screenshot tests →
+(48 service tests, 31 streaming tests, 3 for `LiveDownload`, 21 screenshot tests →
 `tools/buildcheck/app/build/shots`, 8 against a real Navidrome, skipped
 unless one is running: `tools/navidrome/README.md`, and 33 with the car's own
 launcher — 7 of them with SmartTube too — skipped unless their APKs are
@@ -254,7 +254,10 @@ are the main thread here.
   `theAppIsOneProcess`), the song cache is opened when the launcher asks,
   not as the player is made (`MediaCache.dataSourceFactory`, `openSoon`),
   and the adapter service itself isn't bound (for the volume, `CarVolume`)
-  until then, or 25 s after boot.
+  until then, or 25 s after boot.  (1.0.17's one logged start-up: 0.26 s
+  to spare, MediaService made in ~0.2 s; the music played 1.8 s after the
+  launcher asked, the slowest logged — 0.8–1.6 s before — of which opening
+  the cache then accounts for 0.1–0.2 s.)
   In a logcat: `LAU.EvBatteryView: onChargePercentChange: percent: 98,range=-1,…`
   is orange, `range=0` green; `[CarAdapterSettingManager]
   ID_IMCU_VEHICLE_ELECTRIC_RANGE_DSP_CMD = 0` is the signal being heard.
@@ -316,6 +319,15 @@ are the main thread here.
   yet is held in memory (the 512 KB piece being written and the one before);
   the player reads anything earlier from the cache.  The look-ahead leaves a
   song the player's already fetching itself (`playerIsFetching`).
+- The player gets the next song ready ahead of its turn, and drops it and
+  starts again at every skip within the song that's playing (twice a second
+  while a skip key is held).  If that song isn't on disk it was a request to
+  the server each time, hung up on half a second later: in the car on
+  mobile data (seconds just to connect) they queued up behind each other,
+  and a song skipped to after holding the key took 13 s to start.  So a
+  song that isn't the one playing isn't asked for until 0.7 s after the
+  latest skip (`MediaCache.Follow.holdOff`, `skippedInSong`); it's asked
+  for at once if it becomes the one playing.
 - `WaitForNetworkPolicy` retries through dead spots instead of failing.
   When that still ends in an error, the app waits for the network and tries
   again, for as long as it takes (it used to give up after 15 minutes).
@@ -350,7 +362,10 @@ are the main thread here.
   1.0.16-pre3 skipping was refused for as long as such a song played — any
   song that hadn't been downloaded ahead; in -pre4, until it was all on
   disk.)  A song whose length isn't known at all is still refused
-  (`seekWouldRestart`).
+  (`seekWouldRestart`), and so is skipping ahead in a song that hasn't
+  begun to load and isn't on disk (`seekInSong`: the player would take the
+  place asked for as where to start, and wait in silence for the song to
+  come down that far).
   Carrying on part-way when the car starts still needs the whole song on
   disk (`loadFirst`: one that isn't starts from its beginning, or it would
   wait in silence for the song to come down that far), so the player reads

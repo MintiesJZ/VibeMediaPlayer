@@ -480,6 +480,10 @@ class MediaService : MediaBrowserServiceCompat() {
     @VisibleForTesting
     internal var volumeStepperForTest: VolumeStepper? = null
 
+    /** Stands in for whether a song is all on disk (see [seekInSong]). */
+    @VisibleForTesting
+    internal var onDiskForTest: ((String) -> Boolean)? = null
+
     /** When the car's volume last actually changed (see [volumeObserver]). */
     private var lastCarVolumeChangeAt = -1L
 
@@ -1460,6 +1464,7 @@ class MediaService : MediaBrowserServiceCompat() {
      */
     private fun skipToPrevious() {
         stopFastSeek()
+        MediaCache.skippedInSong()   // (it may be this song from its start)
         player.seekToPrevious()
     }
 
@@ -1487,11 +1492,24 @@ class MediaService : MediaBrowserServiceCompat() {
             Log.i(KEY_TAG, "  → can't skip through this song: it's streaming and its length isn't known")
             return false
         }
+        // A song that hasn't begun to load, and isn't on disk: there's
+        // nothing of it to skip ahead through yet.  (The player would take
+        // the place asked for as where to start, and wait in silence for the
+        // song to come down that far.)
+        val timeline = player.currentTimeline
+        val id = player.currentMediaItem?.mediaId
+        if (positionMs > player.currentPosition && id != null && !timeline.isEmpty &&
+            timeline.getWindow(player.currentMediaItemIndex, Timeline.Window()).isPlaceholder &&
+            !(onDiskForTest?.invoke(id) ?: MediaCache.isCached(this, id))) {
+            Log.i(KEY_TAG, "  → it hasn't loaded yet")
+            return false
+        }
         if (player.currentMediaItem?.mediaId in StreamedSongs) {
             val downloaded = player.bufferedPosition - STREAM_SKIP_MARGIN_MS
             if (positionMs > downloaded) {
                 if (downloaded > player.currentPosition + 1_000L) {
                     Log.i(KEY_TAG, "  → as far as it's downloaded (${downloaded / 1000} s)")
+                    MediaCache.skippedInSong()
                     player.seekTo(downloaded)
                 } else {
                     Log.i(KEY_TAG, "  → it isn't downloaded any further yet")
@@ -1499,6 +1517,7 @@ class MediaService : MediaBrowserServiceCompat() {
                 return false
             }
         }
+        MediaCache.skippedInSong()
         player.seekTo(positionMs)
         return true
     }
@@ -1814,7 +1833,7 @@ class MediaService : MediaBrowserServiceCompat() {
         }
         override fun onSeekTo(pos: Long) {
             stopFastSeek()
-            if (pos > 0) seekInSong(pos) else player.seekTo(pos)
+            if (pos > 0) seekInSong(pos) else { MediaCache.skippedInSong(); player.seekTo(pos) }
         }
 
         override fun onSetShuffleMode(shuffleMode: Int) {

@@ -297,15 +297,7 @@ object MediaCache {
                 spec = dataSpec
                 return 0
             }
-            val d = dataSpec.key?.let { live[it] }
-            if (d != null && d.covers(dataSpec.position)) {
-                letGo()
-                download = d
-                spec = dataSpec
-                position = dataSpec.position
-                remaining = dataSpec.length
-                return C.LENGTH_UNSET.toLong()
-            }
+            if (follows(dataSpec)) return C.LENGTH_UNSET.toLong()
             download = null
             synchronized(lock) {
                 val h = held
@@ -322,6 +314,13 @@ object MediaCache {
                     letGo()
                 }
             }
+            // A song being got ready ahead of its turn isn't asked for while
+            // the one playing is being skipped through (see [holdOff]); the
+            // look-ahead may have started on it meanwhile.
+            if (dataSpec.key != playingKey) {
+                holdOff(dataSpec.key)
+                if (follows(dataSpec)) return C.LENGTH_UNSET.toLong()
+            }
             key = dataSpec.key?.also { playerFetching.getOrPut(it) { AtomicInteger() }.incrementAndGet() }
             try {
                 val n = server.open(dataSpec)
@@ -334,6 +333,45 @@ object MediaCache {
                 replySound = false
                 done()
                 throw e
+            }
+        }
+
+        /** Takes the song from the look-ahead's download of it, if that's where [dataSpec]'s place in it is. */
+        private fun follows(dataSpec: DataSpec): Boolean {
+            val d = dataSpec.key?.let { live[it] } ?: return false
+            if (!d.covers(dataSpec.position)) return false
+            letGo()
+            download = d
+            spec = dataSpec
+            position = dataSpec.position
+            remaining = dataSpec.length
+            return true
+        }
+
+        /**
+         * Waits before asking the server for a song that isn't the one
+         * playing, while the one playing is being skipped through.  The
+         * player gets the next song ready ahead of its turn, and drops it
+         * and starts again at every skip within the song that's playing —
+         * twice a second while a skip key is held.  Asked for at once, that
+         * was a request to the server each time, hung up on half a second
+         * later: on a weak signal they queued up behind each other (seconds
+         * each just to connect) and the song, when its turn came, waited for
+         * them all.  So it isn't asked for until a little after the latest
+         * skip ([skippedInSong]).  Over at once if the song becomes the one
+         * playing; given up if the player drops it meanwhile.
+         */
+        private fun holdOff(key: String?) {
+            synchronized(playingLock) {
+                while (playingKey != key) {
+                    val left = (quietUntilNs - System.nanoTime()) / 1_000_000
+                    if (left <= 0) break
+                    try {
+                        playingLock.wait(left)
+                    } catch (e: InterruptedException) {
+                        throw java.io.InterruptedIOException("dropped before it was asked for")
+                    }
+                }
             }
         }
 
@@ -434,6 +472,16 @@ object MediaCache {
     }
     /** How long a reply the player stopped reading is held open for it to come back to. */
     private const val HOLD_REPLY_MS = 3_000L
+    /** How long after a skip within the song playing the next song isn't asked for ([Follow.holdOff]): longer than between the steps of a held skip key (half a second). */
+    private const val HOLD_OFF_MS = 700L
+    private val playingLock = Object()
+    /** Until when (System.nanoTime) songs being got ready ahead aren't asked for. */
+    @Volatile private var quietUntilNs = System.nanoTime()
+
+    /** The song that's playing has just been skipped through: see [Follow.holdOff]. */
+    fun skippedInSong() {
+        quietUntilNs = System.nanoTime() + HOLD_OFF_MS * 1_000_000
+    }
 
     /**
      * Which song is playing (null: none).  Only its reply is held open when
@@ -441,7 +489,10 @@ object MediaCache {
      */
     fun nowPlaying(mediaId: String?) {
         val key = mediaId?.let(::keyFor)
-        playingKey = key
+        synchronized(playingLock) {
+            playingKey = key
+            playingLock.notifyAll()
+        }
         // Not on the caller's thread (the main one): hanging up is network work.
         if (holding.isNotEmpty()) holder.execute { for (follow in holding) follow.letGoUnless(key) }
     }
