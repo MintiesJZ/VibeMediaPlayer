@@ -61,7 +61,11 @@ internal class SongSourceFactory(
 
     override fun createMediaSource(mediaItem: MediaItem): MediaSource {
         val durationUs = durationMsOf(mediaItem)?.takeIf { it > 0 }?.times(1_000) ?: C.TIME_UNSET
-        val extractors = KnownDurationExtractors(durationUs) { endedUs -> onCutShort(mediaItem, endedUs / 1_000) }
+        val extractors = KnownDurationExtractors(
+            durationUs,
+            onCutShort = { endedUs -> onCutShort(mediaItem, endedUs / 1_000) },
+            onStream   = { stream -> StreamedSongs.mark(mediaItem.mediaId, stream) }
+        )
         return ProgressiveMediaSource.Factory(KeepWhatPlays(dataSourceFactory), extractors)
             .setDrmSessionManagerProvider(drm)
             .setLoadErrorHandlingPolicy(loadErrors)
@@ -108,7 +112,9 @@ internal class KeepWhatPlays(private val upstream: DataSource.Factory) : DataSou
 internal class KnownDurationExtractors(
     private val durationUs: Long,
     /** The stream ended well short of [durationUs]: where (µs). */
-    private val onCutShort: (Long) -> Unit = {}
+    private val onCutShort: (Long) -> Unit = {},
+    /** The song's being taken as a stream (true), or has turned out to be all there (false). */
+    private val onStream: (Boolean) -> Unit = {}
 ) : ExtractorsFactory {
     private val all = DefaultExtractorsFactory()
 
@@ -120,7 +126,7 @@ internal class KnownDurationExtractors(
     private fun wrap(all: Array<Extractor>): Array<Extractor> {
         val extractors = oggFirst(all)
         return if (durationUs == C.TIME_UNSET) extractors
-        else Array(extractors.size) { KnownDurationExtractor(extractors[it], durationUs, onCutShort) }
+        else Array(extractors.size) { KnownDurationExtractor(extractors[it], durationUs, onCutShort, onStream) }
     }
 
     /**
@@ -136,16 +142,60 @@ internal class KnownDurationExtractors(
     }
 }
 
+/**
+ * The songs the player is taking as a stream: come up before they were
+ * downloaded, so with no length, and no way for the player to find a place
+ * in them but to read from the top (see [KnownDurationExtractor]).  They can
+ * be skipped through only as far as they've come in.
+ */
+internal object StreamedSongs {
+    private val ids = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
+
+    fun mark(mediaId: String, stream: Boolean) {
+        if (stream) ids += mediaId else ids -= mediaId
+    }
+
+    operator fun contains(mediaId: String?): Boolean = mediaId != null && mediaId in ids
+}
+
+/**
+ * Gives a stream whose duration its reader can't tell the song's known
+ * duration, and lets a song that's streaming be skipped through.
+ *
+ * The Ogg reader finds a place in a song by looking at its end and working
+ * inwards, which takes the song's length: a song still streaming has none,
+ * so the reader calls it unseekable, and the player then starts it over
+ * from the beginning whenever it's asked for another place in it.  So such
+ * a song is said to be seekable, with one way to any place in it: read it
+ * again from the top (from disk, as far as it's been kept) and let through
+ * only what comes from that place on.  Skipping ahead within what the
+ * player's already read doesn't even need that.  What isn't downloaded yet
+ * can't be skipped to: MediaService sees to that ([StreamedSongs]).
+ */
 @OptIn(UnstableApi::class)
 internal class KnownDurationExtractor(
     private val extractor: Extractor,
     private val knownDurationUs: Long,
-    private val onCutShort: (Long) -> Unit = {}
+    private val onCutShort: (Long) -> Unit = {},
+    private val onStream: (Boolean) -> Unit = {}
 ) : Extractor {
 
     /** The latest point in the song read so far. */
     private var lastSampleUs = C.TIME_UNSET
     private var toldCutShort = false
+
+    /** Being read as a stream (no length): see the class comment. */
+    private var stream = false
+    /** Reading again from the top, for the place at [fromUs]: packets are held back until it's known whether they're let through. */
+    private var sifting = false
+    private var fromUs = 0L
+    /** The Ogg reader, started over, hands on the stream's two header packets as if they were sound, and counts them as time. */
+    private var sawHeader = false
+    private var headerUs = 0L
+    private var headerUsKnown = true
+    private var held = ByteArray(0)
+    private var heldSize = 0
+    private var heldIsHeader = false
 
     override fun sniff(input: ExtractorInput): Boolean = extractor.sniff(input)
 
@@ -154,23 +204,83 @@ internal class KnownDurationExtractor(
             override fun track(id: Int, type: Int): TrackOutput {
                 val track = output.track(id, type)
                 return object : TrackOutput by track {
+                    override fun sampleData(input: androidx.media3.common.DataReader, length: Int, allowEndOfInput: Boolean): Int =
+                        sampleData(input, length, allowEndOfInput, TrackOutput.SAMPLE_DATA_PART_MAIN)
+
+                    override fun sampleData(input: androidx.media3.common.DataReader, length: Int, allowEndOfInput: Boolean, sampleDataPart: Int): Int {
+                        if (!sifting) return track.sampleData(input, length, allowEndOfInput, sampleDataPart)
+                        hold(length)
+                        val n = input.read(held, heldSize, length)
+                        if (n == C.RESULT_END_OF_INPUT) {
+                            if (allowEndOfInput) return n
+                            throw java.io.EOFException()
+                        }
+                        heldSize += n
+                        return n
+                    }
+
+                    override fun sampleData(data: androidx.media3.common.util.ParsableByteArray, length: Int) =
+                        sampleData(data, length, TrackOutput.SAMPLE_DATA_PART_MAIN)
+
+                    override fun sampleData(data: androidx.media3.common.util.ParsableByteArray, length: Int, sampleDataPart: Int) {
+                        if (!sifting) return track.sampleData(data, length, sampleDataPart)
+                        hold(length)
+                        data.readBytes(held, heldSize, length)
+                        heldSize += length
+                    }
+
                     override fun sampleMetadata(timeUs: Long, flags: Int, size: Int, offset: Int, cryptoData: TrackOutput.CryptoData?) {
-                        if (timeUs > lastSampleUs) lastSampleUs = timeUs
-                        track.sampleMetadata(timeUs, flags, size, offset, cryptoData)
+                        var at = timeUs
+                        if (sifting) {
+                            val header = heldSize >= 8 && (startsWith(OPUS_HEAD) || startsWith(OPUS_TAGS))
+                            if (header) {
+                                sawHeader = true
+                                headerUsKnown = false
+                                heldSize = 0
+                                return                                  // not sound
+                            }
+                            if (!headerUsKnown) { headerUs = timeUs; headerUsKnown = true }   // what the headers were counted as
+                            at = timeUs - headerUs
+                            if (at > lastSampleUs) lastSampleUs = at
+                            if (at < fromUs) { heldSize = 0; return }   // before the place asked for
+                            track.sampleData(androidx.media3.common.util.ParsableByteArray(held, heldSize), heldSize)
+                            heldSize = 0
+                            sifting = false                             // from here on it all goes through
+                            track.sampleMetadata(at, flags, size, offset, cryptoData)
+                            return
+                        }
+                        at = timeUs - headerUs
+                        if (at > lastSampleUs) lastSampleUs = at
+                        track.sampleMetadata(at, flags, size, offset, cryptoData)
                     }
                 }
             }
 
             override fun seekMap(seekMap: SeekMap) {
-                output.seekMap(
-                    if (seekMap.durationUs != C.TIME_UNSET) seekMap
-                    else object : SeekMap by seekMap {
+                output.seekMap(when {
+                    seekMap.durationUs != C.TIME_UNSET -> {
+                        stream = false
+                        onStream(false)
+                        seekMap
+                    }
+                    extractor.underlyingImplementation is OggExtractor -> {
+                        stream = true
+                        onStream(true)
+                        FromTheTop(knownDurationUs)
+                    }
+                    else -> object : SeekMap by seekMap {
                         override fun getDurationUs(): Long = knownDurationUs
                     }
-                )
+                })
             }
         })
     }
+
+    private fun hold(more: Int) {
+        if (heldSize + more > held.size) held = held.copyOf(maxOf(heldSize + more, held.size * 2, 4096))
+    }
+
+    private fun startsWith(what: ByteArray): Boolean = what.indices.all { held[it] == what[it] }
 
     override fun read(input: ExtractorInput, seekPosition: PositionHolder): Int {
         val result = extractor.read(input, seekPosition)
@@ -182,14 +292,32 @@ internal class KnownDurationExtractor(
         return result
     }
 
-    override fun seek(position: Long, timeUs: Long) = extractor.seek(position, timeUs)
+    override fun seek(position: Long, timeUs: Long) {
+        heldSize = 0
+        sawHeader = false
+        headerUs = 0L
+        headerUsKnown = true
+        // A stream read again from the top: only what's wanted goes through.
+        sifting = stream && position == 0L
+        fromUs = if (sifting) timeUs else 0L
+        extractor.seek(position, timeUs)
+    }
 
     override fun release() = extractor.release()
 
     override fun getUnderlyingImplementation(): Extractor = extractor.underlyingImplementation
 
+    /** Any place in the song is reached by reading from the top (see [KnownDurationExtractor]). */
+    private class FromTheTop(private val durationUs: Long) : SeekMap {
+        override fun isSeekable() = true
+        override fun getDurationUs() = durationUs
+        override fun getSeekPoints(timeUs: Long) = SeekMap.SeekPoints(androidx.media3.extractor.SeekPoint.START)
+    }
+
     private companion object {
         /** Ending this far before the song's length isn't the song's own end (lengths are given to the second). */
         const val CUT_SHORT_US = 10_000_000L
+        val OPUS_HEAD = "OpusHead".toByteArray(Charsets.US_ASCII)
+        val OPUS_TAGS = "OpusTags".toByteArray(Charsets.US_ASCII)
     }
 }

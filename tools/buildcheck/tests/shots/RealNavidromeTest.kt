@@ -358,6 +358,51 @@ class RealNavidromeTest {
         s.onDestroy()
     }
 
+    /**
+     * A song still coming from the real server (a weak signal) is skipped
+     * through: ahead within what's come in, and back, which reads it again
+     * from the top.  What plays next is the real stream's own packets from
+     * that place in the song, and the whole song is still kept.
+     */
+    @Test
+    fun aSongStillComingIsSkippedThroughWithTheRealServer() {
+        val song = album("Low Tide Radio")[3]   // over five minutes
+        relay.pace = { e, _ -> if (e.endpoint == "stream") 300_000 else null }
+        val s = play(listOf(song))
+        val p = s.player()
+        val seekBy = MediaService::class.java.getDeclaredMethod("seekBy", Long::class.javaPrimitiveType).apply { isAccessible = true }
+        drive(s, 20_000) { heard.size >= 100 }
+        // Paused, so the download gets ahead of the music (here the music plays as fast as it comes).
+        p.pause()
+        drive(s, 60_000) { p.bufferedPosition - p.currentPosition >= 60_000 }
+        assertTrue("still coming", !MediaCache.isCached(app, "sub:${song.id}"))
+
+        heard.clear()
+        assertTrue("skipped ahead", seekBy.invoke(s, 30_000L) as Boolean)
+        drive(s, 500)
+        val aheadAt = p.currentPosition
+        val ahead = heard.toList()
+
+        heard.clear()
+        assertTrue("skipped back", seekBy.invoke(s, -20_000L) as Boolean)
+        val backAt = p.currentPosition
+        p.play()
+        drive(s, 20_000) { heard.size >= 200 }
+        val back = heard.take(200)
+
+        drive(s, 600_000) { MediaCache.isCached(app, "sub:${song.id}") }   // the rest, at the link's pace
+        report("skipping through a song still coming")
+        // (Asked for only now: asking first would put the song in Navidrome's transcoding cache.)
+        val all = expectedPackets(song)
+        fun placeMs(got: List<Long>) = java.util.Collections.indexOfSubList(all, got) * 20L   // 20 ms a packet
+        assertTrue("some of it after skipping ahead", ahead.isNotEmpty())
+        assertTrue("ahead: the song from ${aheadAt} ms, found at ${placeMs(ahead)} ms", placeMs(ahead) in aheadAt - 100..aheadAt + 100)
+        assertTrue("back: the song from ${backAt} ms, found at ${placeMs(back)} ms", placeMs(back) in backAt - 100..backAt + 100)
+        assertTrue("20 s back", backAt in aheadAt - 21_000..aheadAt - 19_000)
+        assertKeptWhole(song)
+        s.onDestroy()
+    }
+
     /** A song already in Navidrome's transcoding cache comes with its length: it plays and is kept the same. */
     @Test
     fun aSongFromNavidromesOwnCachePlaysAndIsKept() {

@@ -334,6 +334,8 @@ class MediaService : MediaBrowserServiceCompat() {
 
         /** How far ahead the player reads (see the load control in onCreate). */
         private const val MAX_BUFFER_MS = 10 * 60_000
+        /** A song still streaming is skipped through up to this far short of what's come in. */
+        private const val STREAM_SKIP_MARGIN_MS = 3_000L
 
         /** Started again this soon after it was last seen playing: it stopped unexpectedly (see carryOnAfterCrash). */
         private const val CARRY_ON_WITHIN_MS = 2 * 60_000L
@@ -1011,7 +1013,6 @@ class MediaService : MediaBrowserServiceCompat() {
         override fun onPlaybackStateChanged(playbackState: Int) {
             if (settingQueue) return
             if (playbackState == Player.STATE_READY) {
-                reloadingFromDisk = null
                 traceSongLoaded()
                 streamRetries = 0
                 loginRefused = false
@@ -1080,10 +1081,17 @@ class MediaService : MediaBrowserServiceCompat() {
      * Puts the song to start with in the player, on its own, and tells the
      * player to load it: the first step of [playQueue], which puts the rest
      * of the queue around it and sees to everything else while it loads.
+     *
+     * Carrying on part-way through a song needs all of it on disk: one
+     * that isn't starts from its beginning, as soon as it comes.  (A place
+     * in a song that's streaming is found by reading it from the top — see
+     * [KnownDurationExtractor] — so it would wait in silence for all the
+     * song before that place to come down, a long while on a weak signal.)
      */
     private fun loadFirst(item: MediaItem, positionMs: Long) {
         settingQueue = true
-        player.setMediaItem(item, positionMs)
+        val from = if (positionMs > 0 && !MediaCache.isCached(this, item.mediaId)) 0L else positionMs
+        player.setMediaItem(item, from)
         player.prepare()
         traceLoading()
     }
@@ -1097,7 +1105,6 @@ class MediaService : MediaBrowserServiceCompat() {
 
     /** Another song is the one playing (or about to): tell the car, keep it for next time, look ahead. */
     private fun songChanged(item: MediaItem?, durationMs: Long? = null) {
-        reloadingFromDisk = null
         // The item itself: player.mediaMetadata may not have settled yet.
         session.setMetadata(buildMetadata(item, durationMs))
         session.setPlaybackState(buildPlaybackState())
@@ -1450,56 +1457,43 @@ class MediaService : MediaBrowserServiceCompat() {
     }
 
     /**
-     * A song still streaming (not downloaded yet) can't be skipped through:
-     * the player would start it over from the beginning.  Not known until it
-     * has started loading, so a seek isn't stopped before then.
+     * A stream the player can't find a place in: it would start it over
+     * from the beginning.  (Only one whose length isn't known at all now: a
+     * song of known length is found its way around, [KnownDurationExtractor].)
+     * Not known until it has started loading, so a seek isn't stopped before
+     * then.
      */
     private fun seekWouldRestart(): Boolean {
         val timeline = player.currentTimeline
         if (timeline.isEmpty) return false
-        if (reloadingFromDisk != null && reloadingFromDisk == player.currentMediaItem?.mediaId) return false
         val window = timeline.getWindow(player.currentMediaItemIndex, Timeline.Window())
         return !window.isPlaceholder && !window.isSeekable
     }
 
-    /** The song being loaded again by [reloadFromDisk], until it's loaded. */
-    private var reloadingFromDisk: String? = null
-
     /**
-     * A song that began as a stream stays one the player can't skip through,
-     * even once it's all on disk: the player only finds out where things
-     * are in a song as it starts loading it.  So once it's downloaded it's
-     * loaded again, from disk, at [positionMs] — and can be skipped through
-     * like any other.  (It used to be refused for as long as the song
-     * played.)  False if it isn't all on disk yet.
+     * Moves to [positionMs] in the song.  A song that's still streaming
+     * (see [StreamedSongs]) can be skipped through as far as it's come in:
+     * further than that goes to where it's got to, and false.
      */
-    private fun reloadFromDisk(positionMs: Long): Boolean {
-        val item = player.currentMediaItem ?: return false
-        if (!MediaCache.isCached(this, item.mediaId)) return false
-        Log.i(KEY_TAG, "  → it's downloaded now: loading it from disk to skip through it")
-        reloadingFromDisk = item.mediaId
-        val index = player.currentMediaItemIndex
-        settingQueue = true          // the same song, still playing: nothing to tell anyone
-        try {
-            player.stop()
-            player.seekTo(index, positionMs)
-            player.prepare()
-        } finally {
-            settingQueue = false
-        }
-        session.setPlaybackState(buildPlaybackState())
-        return true
-    }
-
-    /** Moves to [positionMs] in the song.  False if it can't be yet: it's still streaming. */
     private fun seekInSong(positionMs: Long): Boolean {
-        if (!seekWouldRestart()) {
-            player.seekTo(positionMs)
-            return true
+        if (seekWouldRestart()) {
+            Log.i(KEY_TAG, "  → can't skip through this song: it's streaming and its length isn't known")
+            return false
         }
-        if (reloadFromDisk(positionMs)) return true
-        Log.i(KEY_TAG, "  → can't skip through this song until it's downloaded")
-        return false
+        if (player.currentMediaItem?.mediaId in StreamedSongs) {
+            val downloaded = player.bufferedPosition - STREAM_SKIP_MARGIN_MS
+            if (positionMs > downloaded) {
+                if (downloaded > player.currentPosition + 1_000L) {
+                    Log.i(KEY_TAG, "  → as far as it's downloaded (${downloaded / 1000} s)")
+                    player.seekTo(downloaded)
+                } else {
+                    Log.i(KEY_TAG, "  → it isn't downloaded any further yet")
+                }
+                return false
+            }
+        }
+        player.seekTo(positionMs)
+        return true
     }
 
     /** Seeks within the song.  Returns false if it hit the start or end (or can't seek). */

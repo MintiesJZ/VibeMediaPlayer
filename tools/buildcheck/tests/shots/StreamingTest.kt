@@ -463,6 +463,38 @@ class StreamingTest {
         s.onDestroy()
     }
 
+    /**
+     * Switched off while the song was still downloading (a weak signal), and
+     * started again with no signal: what there is of it plays straight away,
+     * from its beginning.  (Carrying on part-way takes all of the song on
+     * disk: a place in one that's part there is found by reading it from
+     * the top, and if it weren't there yet the music would wait in silence
+     * for the song to come down that far.)
+     */
+    @Test
+    fun aSongPartlyDownloadedStartsFromItsBeginningWhenTheCarStartsAgain() {
+        server.addSongs(2, seconds = 300)
+        server.bytesPerSecond = 1_000_000
+        val id = server.songs.keys.first()
+        val first = startPlaying()
+        drive(first, 10_000, until = { heard.size >= 500 })
+        first.player().pause()
+        drive(first, 500)
+        val at = ResumeStore(app).load()!!.positionMs
+        assertTrue("part-way through song 0 ($at ms)", at > 1_000)
+        first.onDestroy()
+        freshCache()
+        assertTrue("part of it is on disk", MediaCache.cachedBytesFromStart(app, "sub:$id") > 0 && !MediaCache.isCached(app, "sub:$id"))
+        freshCache()
+        server.goDown()
+        heard.clear()
+        val s = startService()
+        drive(s, 5_000, until = { heard.size >= 100 })
+        assertTrue("played without the server", heard.size >= 100)
+        assertEquals("from its beginning", 0 to 0, heard.first())
+        s.onDestroy()
+    }
+
     // ── other sounds, pausing, and what's reported ───────────────────────
 
     private val audio get() = shadowOf(app.getSystemService(android.media.AudioManager::class.java))
@@ -645,38 +677,114 @@ class StreamingTest {
      */
     /**
      * A song that began as a stream (it wasn't downloaded when it came up)
-     * can be skipped through once it's all on disk.  The player only learns
-     * its way around a song as it starts loading it, so it went on being
-     * refused for as long as the song played; now it's loaded again from
-     * disk, at the place asked for.  (In the car: skipping on past the songs
-     * downloaded ahead, then holding the skip key.)
+     * can be skipped through, forwards and back.  The player only learns
+     * its way around a song as it starts loading it, and a stream has no
+     * length to find a place by, so skipping was refused (it would have
+     * started the song over); now any place in it is found by reading it
+     * again from the top, from disk.  (In the car: skipping on past the
+     * songs downloaded ahead, then holding the skip key.)
      */
     @Test
-    fun aSongThatBeganAsAStreamCanBeSkippedThroughOnceItsDownloaded() {
+    fun aSongThatBeganAsAStreamCanBeSkippedThrough() {
         server.addSongs(2, seconds = 300)
         val id = server.songs.keys.first()
         val s = startPlaying()
         val p = s.player()
         drive(s, 60_000, until = { heard.size >= 100 && MediaCache.isCached(app, "sub:$id") })
         assertTrue("downloaded", MediaCache.isCached(app, "sub:$id"))
-        assertTrue("but the player still takes it for a stream", !p.isCurrentMediaItemSeekable)
-        val seekBy = MediaService::class.java.getDeclaredMethod("seekBy", Long::class.javaPrimitiveType).apply { isAccessible = true }
         heard.clear()
-        assertTrue("skipped ahead", seekBy.invoke(s, 120_000L) as Boolean)
-        // Held: on it goes, 5 s at a time, without loading the song again each time.
-        assertTrue(seekBy.invoke(s, 5_000L) as Boolean)
-        assertTrue(seekBy.invoke(s, 5_000L) as Boolean)
+        assertTrue("skipped ahead", s.seekBy(120_000L))
+        // Held: on it goes, 5 s at a time.
+        assertTrue(s.seekBy(5_000L))
+        assertTrue(s.seekBy(5_000L))
         drive(s, 60_000, until = { heard.count { it.first == 0 } >= 100 })
-        val song0 = heard.filter { it.first == 0 }.map { it.second }
+        var song0 = heard.filter { it.first == 0 }.map { it.second }
         assertTrue("played on", song0.size >= 100)
-        assertTrue("from two minutes further on, not from the start: packet ${song0.first()}",
-            song0.first() * OggOpus.PACKET_MS >= 125_000)
-        assertTrue("and can be skipped through like any other now", p.isCurrentMediaItemSeekable)
+        assertTrue("from two minutes further on, not from the start: packet ${song0.min()}",
+            song0.min() * OggOpus.PACKET_MS >= 120_000 && song0.last() * OggOpus.PACKET_MS >= 130_000)
+        // (What it was given between the three skips is in there too.)
+        assertTrue("in order from there", song0.zipWithNext().count { (a, b) -> b != a + 1 } <= 2)
+        // And back again.
+        val was = song0.last() * OggOpus.PACKET_MS
+        heard.clear()
+        assertTrue("skipped back", s.seekBy(-60_000L))
+        drive(s, 60_000, until = { heard.count { it.first == 0 } >= 100 })
+        song0 = heard.filter { it.first == 0 }.map { it.second }
+        assertTrue("played on", song0.size >= 100)
+        assertTrue("from a minute back (it was at $was ms), not from the start: packet ${song0.first()}",
+            song0.first() * OggOpus.PACKET_MS in was - 70_000..was - 50_000)
+        assertInOrder(song0)
         assertTrue(p.playWhenReady)
         assertEquals("nothing fetched again", 1, server.streamRequests(id).size)
         assertEquals("the same song, the same queue", "sub:$id", p.currentMediaItem?.mediaId)
         assertEquals(2, p.mediaItemCount)
         s.onDestroy()
+    }
+
+    /**
+     * A song that's still downloading (a weak signal: the car in the garage
+     * on mobile data, a song taking over a minute to come) can be skipped
+     * through as far as it's come in.  Holding the skip key goes that far
+     * and stops there; it used to be refused until the whole song was down.
+     */
+    @Test
+    fun aSongStillDownloadingIsSkippedThroughAsFarAsItsCome() {
+        server.addSongs(2, seconds = 300)
+        server.bytesPerSecond = 1_000_000
+        val id = server.songs.keys.first()
+        val s = startPlaying()
+        val p = s.player()
+        // Paused, so the download gets ahead of the music (here the music
+        // plays as fast as it comes).
+        drive(s, 10_000, until = { heard.size >= 100 })
+        p.pause()
+        drive(s, 60_000, until = { p.bufferedPosition - p.currentPosition >= 60_000 })
+        assertTrue("still downloading", !MediaCache.isCached(app, "sub:$id"))
+        var was = p.currentPosition
+        heard.clear()
+        assertTrue("skipped ahead", s.seekBy(20_000L))
+        drive(s, 500)
+        assertTrue("20 s on from $was ms: ${p.currentPosition}", p.currentPosition in was + 19_000..was + 21_000)
+        assertTrue("and that's what plays next: packet ${heard.firstOrNull()?.second}",
+            heard.isNotEmpty() && heard.first().second * OggOpus.PACKET_MS in was + 19_000..was + 21_000)
+        assertEquals("without asking the server again", 1, server.streamRequests(id).size)
+
+        // Further than it's come in: as far as it has, and the held key stops.
+        val come = p.bufferedPosition
+        assertTrue("no further than it's downloaded", !s.seekBy(200_000L))
+        drive(s, 500)
+        assertTrue("as far as it had come ($come ms): ${p.currentPosition}", p.currentPosition in come - 5_000..come)
+
+        // Back, the key held (one step straight after another): read again
+        // from the top, from disk.
+        was = p.currentPosition
+        heard.clear()
+        assertTrue("skipped back", s.seekBy(-20_000L))
+        assertTrue(s.seekBy(-5_000L))
+        assertTrue(s.seekBy(-5_000L))
+        p.play()
+        drive(s, 10_000, until = { heard.size >= 100 })
+        assertTrue("30 s back from $was ms, not from the start: packet ${heard.first().second}",
+            heard.first().second * OggOpus.PACKET_MS in was - 31_000..was - 29_000)
+        assertInOrder(heard.map { it.second })
+
+        // The rest still comes, and all of it is kept.
+        drive(s, 120_000, until = { MediaCache.isCached(app, "sub:$id") })
+        println("requests: ${server.streamRequests(id).map { "${it.range} ${it.sent.get()}" }}")
+        assertKeptWhole(0)
+        assertTrue(p.playWhenReady)
+        assertEquals("the same song", "sub:$id", p.currentMediaItem?.mediaId)
+        s.onDestroy()
+    }
+
+    private fun MediaService.seekBy(ms: Long): Boolean =
+        MediaService::class.java.getDeclaredMethod("seekBy", Long::class.javaPrimitiveType)
+            .apply { isAccessible = true }.invoke(this, ms) as Boolean
+
+    /** Packets as the decoder got them: each the one after the last, none twice and none missed. */
+    private fun assertInOrder(packets: List<Int>) {
+        val wrong = packets.zipWithNext().firstOrNull { (a, b) -> b != a + 1 }
+        assertTrue("in order, nothing missed or twice: $wrong", wrong == null)
     }
 
     @Test

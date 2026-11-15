@@ -62,8 +62,8 @@ repository is MintiesJZ/VibeMediaPlayer, and GitHub sends the old address on.
 
 `tools/buildcheck` builds the app's sources with the same dependencies as
 `app/build.gradle` and runs the Robolectric tests in `tools/buildcheck/tests`
-(46 service tests, 26 streaming tests, 3 for `LiveDownload`, 21 screenshot tests →
-`tools/buildcheck/app/build/shots`, 7 against a real Navidrome, skipped
+(46 service tests, 28 streaming tests, 3 for `LiveDownload`, 21 screenshot tests →
+`tools/buildcheck/app/build/shots`, 8 against a real Navidrome, skipped
 unless one is running: `tools/navidrome/README.md`, and 33 with the car's own
 launcher — 7 of them with SmartTube too — skipped unless their APKs are
 given: `tools/firmware/README.md`).
@@ -318,17 +318,26 @@ are the main thread here.
   connection (Wi-Fi → mobile data leaving home, a dead spot) restarted it
   from the beginning.  `SongSourceFactory` gives the player each song's
   duration from its details, so it carries on from where it dropped.
-  Seeking such a song would also restart it, so skipping through it is
-  refused while it's still coming (`seekWouldRestart`).  The player only
-  learns its way around a song as it starts loading it, so a song that
-  began as a stream stays that way for it even when it's all on disk: once
-  it is, a skip loads it again from disk at the place asked for
-  (`reloadFromDisk`).  (Up to 1.0.16-pre3 it was refused for as long as the
-  song played — any song that hadn't been downloaded ahead: one picked
-  from the library, or reached by skipping on past the ten downloaded.)
-  Carrying on part-way when the car starts needs the whole song on disk for
-  the same reason, so the player reads up to ten minutes ahead
-  (`MAX_BUFFER_MS`): the whole of nearly any song, straight away.
+  Seeking such a song would restart it too (the Ogg reader finds a place
+  by the song's length, and a stream has none), so `KnownDurationExtractor`
+  tells the player it can be skipped through, with one way to any place:
+  read it again from the top — from disk, as far as it's kept — and let
+  through only what comes from that place on (the stream's two header
+  packets, which the reader then hands on as sound, are dropped and their
+  time taken off).  Skipping ahead within what the player has read needs
+  no reading at all.  It's skipped through only as far as it's come in
+  (`StreamedSongs`, `seekInSong`): further goes to 3 s short of that and
+  stops a held key.  Skipping back while it's still downloading drops the
+  download; the player asks the server for the rest again, from where the
+  disk copy ends.  (Up to 1.0.16-pre3 skipping was refused for as long as
+  such a song played — any song that hadn't been downloaded ahead; in
+  -pre4, until it was all on disk.)  A song whose length isn't known at
+  all is still refused (`seekWouldRestart`).
+  Carrying on part-way when the car starts still needs the whole song on
+  disk (`loadFirst`: one that isn't starts from its beginning, or it would
+  wait in silence for the song to come down that far), so the player reads
+  up to ten minutes ahead (`MAX_BUFFER_MS`): the whole of nearly any song,
+  straight away.
 - The known duration also shows a song that ends more than 10 s short of
   it (`KnownDurationExtractor`): the server ended it early without an error
   (a transcode that died), or the listed length is wrong (Navidrome takes

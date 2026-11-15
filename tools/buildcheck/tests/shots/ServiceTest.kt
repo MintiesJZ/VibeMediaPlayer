@@ -92,6 +92,14 @@ class ServiceTest {
 
     private fun item(i: Int) = ResumeStore.SavedItem("sub:s$i", "Song $i", "Artist", "Album", null, "al1", "ar1", 200_000L)
 
+    /**
+     * Where the saved song is carried on from here: it isn't on disk (there's
+     * no server in these tests to have had it from), and a song that isn't
+     * starts from its beginning — part-way needs all of it on disk, which
+     * StreamingTest covers (aLongSongLeftEarlyCarriesOnWhereItWas).
+     */
+    private val FROM_ITS_BEGINNING = 0L
+
     /** What the app saves while playing: song 3 of 8, 42 s in. */
     private fun savePlayingState() {
         val store = ResumeStore(app)
@@ -281,7 +289,7 @@ class ServiceTest {
         val p = s.player()
         assertEquals(8, p.mediaItemCount)
         assertEquals("sub:s3", p.currentMediaItem?.mediaId)
-        assertEquals(42_000L, p.currentPosition)
+        assertEquals(FROM_ITS_BEGINNING, p.currentPosition)
         assertTrue("should be trying to play", p.playWhenReady)
         // The server can't be reached: we wait ("buffering"), not skip or error.
         idle(3_000)
@@ -313,7 +321,7 @@ class ServiceTest {
         s.restoredByLauncher()
         assertEquals("sub:s3", p.currentMediaItem?.mediaId)
         assertTrue(p.playWhenReady)
-        assertEquals(42_000L, p.currentPosition)
+        assertEquals(FROM_ITS_BEGINNING, p.currentPosition)
         // The timing logged: the launcher asked, then the queue came back.
         fun field(name: String) = MediaService::class.java.getDeclaredField(name).apply { isAccessible = true }.get(s)
         assertTrue((field("traceLauncherAt") as Long) in 0..(field("traceQueueAt") as Long))
@@ -335,7 +343,7 @@ class ServiceTest {
         SubsonicSettings.save(app, SubsonicSettings.Config("http://127.0.0.1:9", "someone", "secret"))
         s.restoredByLauncher()
         assertEquals("sub:s3", s.player().currentMediaItem?.mediaId)
-        assertEquals(42_000L, s.player().currentPosition)
+        assertEquals(FROM_ITS_BEGINNING, s.player().currentPosition)
         assertTrue(address(s), "u=someone&" in address(s))
         s.onDestroy()
 
@@ -372,7 +380,7 @@ class ServiceTest {
         assertTrue("$seen", seen.last().startsWith("8 song(s), sub:s3 at 3"))
         // The queue's as it was saved, and the car's told once it's all in.
         assertEquals((0 until 8).map { "sub:s$it" }, (0 until p.mediaItemCount).map { p.getMediaItemAt(it).mediaId })
-        assertEquals(42_000L, p.currentPosition)
+        assertEquals(FROM_ITS_BEGINNING, p.currentPosition)
         assertTrue(p.playWhenReady)
         assertEquals("sub:s3", ResumeStore(app).load()!!.item?.mediaId)
         idle(2_000)
@@ -408,7 +416,7 @@ class ServiceTest {
         s.onStartCommand(launcherCommand(CommandParcelable.SWITCH_SOURCE_ONLY_PLAY), 0, 2)
         looper.idle()
         assertTrue(p.playWhenReady)
-        assertEquals(42_000L, p.currentPosition)
+        assertEquals(FROM_ITS_BEGINNING, p.currentPosition)
         fun field(name: String) = MediaService::class.java.getDeclaredField(name).apply { isAccessible = true }.get(s)
         assertTrue((field("traceQueueAt") as Long) in 0..(field("traceLauncherAt") as Long))
         s.call("finishTrace")
@@ -811,11 +819,12 @@ class ServiceTest {
     /**
      * The player itself: a song streaming from the server (no length, like a
      * transcoded one) gets its length from the song's details, isn't taken
-     * for live radio, and while it's still coming holding a skip key doesn't
-     * start it over.
+     * for live radio, starts from its beginning (not part-way: it isn't on
+     * disk), and holding a skip key doesn't start it over or skip past what
+     * has come.
      */
     @Test
-    fun streamingSongIsNotLiveRadioAndIsntSkippedThrough() {
+    fun streamingSongIsNotLiveRadioAndIsntSkippedPastWhatsCome() {
         val stream = opusStream()
         val server = java.net.ServerSocket(0, 20, java.net.InetAddress.getByName("127.0.0.1"))
         Thread {
@@ -855,9 +864,10 @@ class ServiceTest {
         waitFor { p.duration != androidx.media3.common.C.TIME_UNSET }
         assertEquals("the song's length, from its details", 200_000L, p.duration)
         assertFalse("not taken for live radio", p.isCurrentMediaItemLive)
-        assertFalse("can't seek in it yet", p.isCurrentMediaItemSeekable)
+        assertTrue("taken as a stream", com.saicmotor.media.service.StreamedSongs.contains(p.currentMediaItem?.mediaId))
+        assertTrue("from its beginning: ${p.currentPosition}", p.currentPosition < 5_000)
         val before = p.currentPosition
-        assertFalse("fast forward refused", s.call("seekBy", 10_000L) as Boolean)
+        assertFalse("fast forward refused: it hasn't come that far", s.call("seekBy", 10_000L) as Boolean)
         assertTrue("not started over or moved", p.currentPosition in before until before + 2_000)
         server.close()
     }
@@ -1148,7 +1158,7 @@ class ServiceTest {
         val s = startedAgain()
         assertTrue("playing again", s.player().playWhenReady)
         assertEquals(3, s.player().currentMediaItemIndex)
-        assertEquals(42_000L, s.player().currentPosition)
+        assertEquals(FROM_ITS_BEGINNING, s.player().currentPosition)
     }
 
     /** Paused music stays off: there's nothing to carry on. */
