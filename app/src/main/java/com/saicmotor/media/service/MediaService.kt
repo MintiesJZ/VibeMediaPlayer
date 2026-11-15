@@ -805,7 +805,11 @@ class MediaService : MediaBrowserServiceCompat() {
         } catch (e: Exception) {
             Log.w(TAG, "Can't watch for volume changes", e)
         }
-        carVolume.connect()
+        // The car's volume is turned through the car's adapter service (see
+        // CarVolume): not asked of it while it's still starting (see below).
+        val carStarting = BOOT_FALLBACK_MS - SystemClock.elapsedRealtime()
+        if (carStarting <= 0) carVolume.connect()
+        else serviceScope.launch { delay(carStarting); carVolume.connect() }
 
         // So the launcher brings us back when the car starts, not the radio.
         SaicModeBridge.reportAvailable(this)
@@ -954,6 +958,7 @@ class MediaService : MediaBrowserServiceCompat() {
 
     override fun onDestroy() {
         resumeStore.savePlaying(null)   // stopped on purpose: nothing to carry on from
+        MediaCache.nowPlaying(null)
         stopFastSeek()
         stopDownloader()
         keyRouter.stop()
@@ -1090,6 +1095,7 @@ class MediaService : MediaBrowserServiceCompat() {
      */
     private fun loadFirst(item: MediaItem, positionMs: Long) {
         settingQueue = true
+        MediaCache.nowPlaying(item.mediaId)
         val from = if (positionMs > 0 && !MediaCache.isCached(this, item.mediaId)) 0L else positionMs
         player.setMediaItem(item, from)
         player.prepare()
@@ -1105,6 +1111,7 @@ class MediaService : MediaBrowserServiceCompat() {
 
     /** Another song is the one playing (or about to): tell the car, keep it for next time, look ahead. */
     private fun songChanged(item: MediaItem?, durationMs: Long? = null) {
+        MediaCache.nowPlaying(item?.mediaId)
         // The item itself: player.mediaMetadata may not have settled yet.
         session.setMetadata(buildMetadata(item, durationMs))
         session.setPlaybackState(buildPlaybackState())
@@ -2489,6 +2496,11 @@ class MediaService : MediaBrowserServiceCompat() {
         leaveOthersAlone: Boolean = false
     ) {
         startupJob?.cancel()
+        // Asked for the music: the car's own services have started by now.
+        // The song cache is opened meanwhile (the player is about to want
+        // it), and the car's volume can be reached.
+        MediaCache.openSoon(this)
+        carVolume.connect()
         startupJob = serviceScope.launch {
             if (leaveOthersAlone && otherAppIsPlaying()) {
                 Log.i(TAG, "Startup: another app is already playing — leaving it alone")

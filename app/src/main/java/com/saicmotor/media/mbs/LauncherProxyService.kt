@@ -11,10 +11,11 @@ import com.saicmotor.media.service.MediaService
  * Browse endpoint for the SAIC launcher.
  *
  * The launcher binds to the stock media app's per-source services by name
- * (USB 1, USB 2, Online, Bluetooth), each in its own process.  This app only
- * plays Navidrome, so every one of those names is kept but serves the same
- * thing: the Navidrome library, and MediaService's session token, so the
- * launcher's tile and buttons drive the one player whichever it binds to.
+ * (USB 1, USB 2, Online, Bluetooth).  This app only plays Navidrome, so
+ * every one of those names is kept but serves the same thing: the Navidrome
+ * library, and MediaService's session token, so the launcher's tile and
+ * buttons drive the one player whichever it binds to.  They run in the
+ * app's own process, with MediaService (see the manifest).
  */
 abstract class LauncherProxyService : MediaBrowserServiceCompat() {
 
@@ -38,8 +39,9 @@ abstract class LauncherProxyService : MediaBrowserServiceCompat() {
         }
         override fun onConnectionSuspended() {
             Log.w(TAG, "${javaClass.simpleName}: player went away; restarting")
-            // MediaService died — its session token is now stale.  Self-terminate
-            // so the launcher's next bind respawns this proxy with the new token.
+            // MediaService is gone — its session token is now stale.  (It's
+            // in this process, so this shouldn't happen while we're here.)
+            // Start again, so the launcher's next bind gets the new token.
             android.os.Process.killProcess(android.os.Process.myPid())
         }
     }

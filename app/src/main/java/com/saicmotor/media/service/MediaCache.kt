@@ -23,6 +23,9 @@ import com.saicmotor.media.data.SubsonicSettings
 import com.saicmotor.media.subsonic.SubsonicClient
 import java.io.File
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.Executors
+import java.util.concurrent.ScheduledFuture
+import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
 
 /**
@@ -75,12 +78,26 @@ object MediaCache {
      * server — or, for a song the look-ahead is still downloading, to that
      * download as it comes in (see [Follow]).
      */
-    fun dataSourceFactory(context: Context): CacheDataSource.Factory {
-        val server = serverFactory(context)
-        val cache = cache(context)
-        return cacheFactory(context) {
-            Follow(server.createDataSource()) { key -> ContentMetadata.getContentLength(cache.getContentMetadata(key)) }
+    fun dataSourceFactory(context: Context): DataSource.Factory {
+        // Made when the first song is loaded, not when the player is: opening
+        // the cache reads its index and lists its files, and the player is
+        // made while the car's own services are still starting (see
+        // CLAUDE.md, "Quiet while the car starts").
+        val factory by lazy {
+            val server = serverFactory(context)
+            val cache = cache(context)
+            cacheFactory(context) {
+                Follow(server.createDataSource()) { key -> ContentMetadata.getContentLength(cache.getContentMetadata(key)) }
+            }
         }
+        return DataSource.Factory { factory.createDataSource() }
+    }
+
+    /** Opens the cache, off the caller's thread: it's about to be wanted (see [dataSourceFactory]). */
+    fun openSoon(context: Context) {
+        if (cache != null) return
+        val app = context.applicationContext
+        Thread({ cache(app) }, "CarMedia:cache").start()
     }
 
     private fun cacheFactory(context: Context, upstream: DataSource.Factory): CacheDataSource.Factory {
@@ -259,17 +276,30 @@ object MediaCache {
         private var position = 0L
         private var remaining = C.LENGTH_UNSET.toLong()
 
+        // The server's reply, while the player is reading the song from it itself:
+        /** Where in the song it's been read to. */
+        private var replyAt = 0L
+        /** How much of it is left, if the server said. */
+        private var replyLeft = C.LENGTH_UNSET.toLong()
+        /** Nothing's gone wrong with it, and there's more of it to come. */
+        private var replySound = false
+        /** Closed by the player but held open (see [close]): what lets it go if it isn't taken up again. */
+        private var held: ScheduledFuture<*>? = null
+        private val lock = Any()
+
         override fun addTransferListener(transferListener: TransferListener) = server.addTransferListener(transferListener)
 
         override fun open(dataSpec: DataSpec): Long {
             val length = dataSpec.key?.let(knownLength) ?: C.LENGTH_UNSET.toLong()
             if (length != C.LENGTH_UNSET.toLong() && dataSpec.position >= length) {
+                letGo()
                 pastEnd = true
                 spec = dataSpec
                 return 0
             }
             val d = dataSpec.key?.let { live[it] }
             if (d != null && d.covers(dataSpec.position)) {
+                letGo()
                 download = d
                 spec = dataSpec
                 position = dataSpec.position
@@ -277,10 +307,31 @@ object MediaCache {
                 return C.LENGTH_UNSET.toLong()
             }
             download = null
+            synchronized(lock) {
+                val h = held
+                if (h != null) {
+                    // Back where the reply was left, after a skip: it carries
+                    // on, with nothing asked of the server.
+                    if (key == dataSpec.key && replyAt == dataSpec.position &&
+                        (dataSpec.length == C.LENGTH_UNSET.toLong() || dataSpec.length == replyLeft)) {
+                        h.cancel(false)
+                        held = null
+                        holding -= this
+                        return replyLeft
+                    }
+                    letGo()
+                }
+            }
             key = dataSpec.key?.also { playerFetching.getOrPut(it) { AtomicInteger() }.incrementAndGet() }
             try {
-                return server.open(dataSpec)
+                val n = server.open(dataSpec)
+                replyAt = dataSpec.position
+                replyLeft = n
+                // (To the song's end, that is: nothing else is ever asked for.)
+                replySound = dataSpec.length == C.LENGTH_UNSET.toLong() || dataSpec.length == n
+                return n
             } catch (e: Exception) {
+                replySound = false
                 done()
                 throw e
             }
@@ -291,9 +342,25 @@ object MediaCache {
             key = null
         }
 
+        private fun readReply(buffer: ByteArray, offset: Int, length: Int): Int {
+            val n = try {
+                server.read(buffer, offset, length)
+            } catch (e: Exception) {
+                replySound = false
+                throw e
+            }
+            if (n == C.RESULT_END_OF_INPUT) {
+                replySound = false
+            } else if (n > 0) {
+                replyAt += n
+                if (replyLeft != C.LENGTH_UNSET.toLong()) replyLeft -= n
+            }
+            return n
+        }
+
         override fun read(buffer: ByteArray, offset: Int, length: Int): Int {
             if (pastEnd) return if (length == 0) 0 else C.RESULT_END_OF_INPUT
-            val d = download ?: return server.read(buffer, offset, length)
+            val d = download ?: return readReply(buffer, offset, length)
             if (length == 0) return 0
             if (remaining == 0L) return C.RESULT_END_OF_INPUT
             val want = if (remaining == C.LENGTH_UNSET.toLong()) length else minOf(length.toLong(), remaining).toInt()
@@ -309,12 +376,74 @@ object MediaCache {
         override fun getResponseHeaders(): Map<String, List<String>> =
             if (download != null || pastEnd) emptyMap() else server.responseHeaders
 
+        /**
+         * The player stops reading: it's done with the song, or it's been
+         * told to skip to another place in it — which, back or to the start,
+         * means reading the song again from the top, from disk, and then
+         * asking for the rest of it from where the disk copy ends.  That is
+         * exactly where this reply has been read to, so for the song that's
+         * playing the reply is held open a few seconds instead of closed, and
+         * carried on with when the player comes back for the rest ([open]).
+         * (Closed, every skip back in a song still coming dropped its
+         * download and asked the server again: on a weak signal, seconds
+         * each time to get it going again.)
+         */
         override fun close() {
             if (pastEnd) { pastEnd = false; return }
             if (download != null) { download = null; return }
+            synchronized(lock) {
+                if (held != null) return
+                if (replySound && replyLeft != 0L && key != null && key == playingKey) {
+                    holding += this
+                    held = holder.schedule({ letGo() }, HOLD_REPLY_MS, TimeUnit.MILLISECONDS)
+                    return
+                }
+            }
+            closeReply()
+        }
+
+        private fun closeReply() {
+            replySound = false
             done()
             server.close()
         }
+
+        /** Closes the reply being held open, if one is. */
+        fun letGo() {
+            synchronized(lock) {
+                val h = held ?: return
+                h.cancel(false)
+                held = null
+                holding -= this
+                try { closeReply() } catch (_: Exception) {}
+            }
+        }
+
+        /** Lets the held reply go unless it's [playing]'s. */
+        fun letGoUnless(playing: String?) {
+            synchronized(lock) { if (held != null && key != playing) letGo() }
+        }
+    }
+
+    /** The song that's playing, by cache key: its reply from the server is held open across a skip ([Follow.close]). */
+    @Volatile private var playingKey: String? = null
+    /** The player's ways to the server that are holding a reply open. */
+    private val holding: MutableSet<Follow> = ConcurrentHashMap.newKeySet()
+    private val holder by lazy {
+        Executors.newSingleThreadScheduledExecutor { r -> Thread(r, "CarMedia:held-reply").apply { isDaemon = true } }
+    }
+    /** How long a reply the player stopped reading is held open for it to come back to. */
+    private const val HOLD_REPLY_MS = 3_000L
+
+    /**
+     * Which song is playing (null: none).  Only its reply is held open when
+     * the player stops reading ([Follow.close]); any other song's is let go.
+     */
+    fun nowPlaying(mediaId: String?) {
+        val key = mediaId?.let(::keyFor)
+        playingKey = key
+        // Not on the caller's thread (the main one): hanging up is network work.
+        if (holding.isNotEmpty()) holder.execute { for (follow in holding) follow.letGoUnless(key) }
     }
 
     /** The look-ahead's way to the server: what comes in is also handed to [download], for [Follow]. */

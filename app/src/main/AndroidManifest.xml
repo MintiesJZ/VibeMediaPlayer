@@ -61,14 +61,18 @@
             </intent-filter>
         </service>
 
-        <!-- ════════ Launcher browse endpoints (each isolated process) ════════
+        <!-- ════════ Launcher browse endpoints ════════
              The SAIC launcher binds to the stock media app's per-source
-             services by these names; each serves the Navidrome library. -->
+             services by these names; each serves the Navidrome library.
+             In the app's one process: up to 1.0.16 each had its own (as the
+             stock app's do), and the launcher starts two of them as the head
+             unit boots — two more processes to start just as the car's own
+             services are starting (see CLAUDE.md, "Quiet while the car
+             starts"). -->
         <service
             android:name="com.saicmotor.media.mbs.Usb1MediaBrowserService"
             android:directBootAware="true"
-            android:exported="true"
-            android:process=":Usb1MediaBrowserService">
+            android:exported="true">
             <intent-filter>
                 <action android:name="android.media.browse.MediaBrowserService"/>
             </intent-filter>
@@ -77,8 +81,7 @@
         <service
             android:name="com.saicmotor.media.mbs.Usb2MediaBrowserService"
             android:directBootAware="true"
-            android:exported="true"
-            android:process=":Usb2MediaBrowserService">
+            android:exported="true">
             <intent-filter>
                 <action android:name="android.media.browse.MediaBrowserService"/>
             </intent-filter>
@@ -87,8 +90,7 @@
         <service
             android:name="com.saicmotor.media.mbs.OnlineMediaBrowserService"
             android:directBootAware="true"
-            android:exported="true"
-            android:process=":OnlineMediaBrowserService">
+            android:exported="true">
             <intent-filter>
                 <action android:name="android.media.browse.MediaBrowserService"/>
             </intent-filter>
@@ -97,8 +99,7 @@
         <service
             android:name="com.saicmotor.media.mbs.BtMediaBrowserService"
             android:directBootAware="true"
-            android:exported="true"
-            android:process=":BtMediaBrowserService">
+            android:exported="true">
             <intent-filter>
                 <action android:name="android.media.browse.MediaBrowserService"/>
             </intent-filter>

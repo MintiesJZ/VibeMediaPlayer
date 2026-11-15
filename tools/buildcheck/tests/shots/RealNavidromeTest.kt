@@ -400,6 +400,7 @@ class RealNavidromeTest {
         assertTrue("back: the song from ${backAt} ms, found at ${placeMs(back)} ms", placeMs(back) in backAt - 100..backAt + 100)
         assertTrue("20 s back", backAt in aheadAt - 21_000..aheadAt - 19_000)
         assertKeptWhole(song)
+        assertEquals("asked for once: skipping back didn't drop the download", 1, relay.streams(song.id).size)
         s.onDestroy()
     }
 

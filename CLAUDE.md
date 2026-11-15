@@ -62,7 +62,7 @@ repository is MintiesJZ/VibeMediaPlayer, and GitHub sends the old address on.
 
 `tools/buildcheck` builds the app's sources with the same dependencies as
 `app/build.gradle` and runs the Robolectric tests in `tools/buildcheck/tests`
-(46 service tests, 28 streaming tests, 3 for `LiveDownload`, 21 screenshot tests →
+(48 service tests, 29 streaming tests, 3 for `LiveDownload`, 21 screenshot tests →
 `tools/buildcheck/app/build/shots`, 8 against a real Navidrome, skipped
 unless one is running: `tools/navidrome/README.md`, and 33 with the car's own
 launcher — 7 of them with SmartTube too — skipped unless their APKs are
@@ -243,6 +243,18 @@ are the main thread here.
   The song to carry on with starts loading the moment the launcher asks
   instead (`restoreFromSnapshot`: it's in the saved state; the queue's
   file is read once it's loading).
+  The margin is thin whatever the app does, and moves by itself: in the
+  eight start-ups logged since, the adapter service subscribed 0.13–0.53 s
+  before the HAL's pass (the 0.13 s with nothing at all done ahead).  It
+  takes it 3.7–4.1 s from its process starting to subscribing (4.8–5.3 s
+  with 1.0 – 1.0.15), and the app's own start falls inside that: its
+  process, MediaService being made (~0.4 s on the main thread) and, up to
+  1.0.16, two more processes for the launcher's browse services.  So since
+  1.0.17 the app is one process (the browse services run in it:
+  `theAppIsOneProcess`), the song cache is opened when the launcher asks,
+  not as the player is made (`MediaCache.dataSourceFactory`, `openSoon`),
+  and the adapter service itself isn't bound (for the volume, `CarVolume`)
+  until then, or 25 s after boot.
   In a logcat: `LAU.EvBatteryView: onChargePercentChange: percent: 98,range=-1,…`
   is orange, `range=0` green; `[CarAdapterSettingManager]
   ID_IMCU_VEHICLE_ELECTRIC_RANGE_DSP_CMD = 0` is the signal being heard.
@@ -327,12 +339,18 @@ are the main thread here.
   time taken off).  Skipping ahead within what the player has read needs
   no reading at all.  It's skipped through only as far as it's come in
   (`StreamedSongs`, `seekInSong`): further goes to 3 s short of that and
-  stops a held key.  Skipping back while it's still downloading drops the
-  download; the player asks the server for the rest again, from where the
-  disk copy ends.  (Up to 1.0.16-pre3 skipping was refused for as long as
-  such a song played — any song that hadn't been downloaded ahead; in
-  -pre4, until it was all on disk.)  A song whose length isn't known at
-  all is still refused (`seekWouldRestart`).
+  stops a held key.  Skipping back (or to the start) makes the player stop
+  reading and start again from the top; the server's reply it was reading
+  is held open meanwhile, for up to 3 s, and carried on with when the
+  player comes back for the rest — which is exactly where the reply had
+  been read to (`MediaCache.Follow.close`; only for the song that's
+  playing, `MediaCache.nowPlaying`: a song left for another is hung up on
+  at once).  In 1.0.16 each skip back dropped the download and asked the
+  server again: ~3 s to get going again on a weak signal.  (Up to
+  1.0.16-pre3 skipping was refused for as long as such a song played — any
+  song that hadn't been downloaded ahead; in -pre4, until it was all on
+  disk.)  A song whose length isn't known at all is still refused
+  (`seekWouldRestart`).
   Carrying on part-way when the car starts still needs the whole song on
   disk (`loadFirst`: one that isn't starts from its beginning, or it would
   wait in silence for the song to come down that far), so the player reads

@@ -58,6 +58,8 @@ class FakeNavidrome : AutoCloseable {
         /** Bytes of song sent in reply. */
         val sent = java.util.concurrent.atomic.AtomicLong()
         var reply: String = ""
+        /** The app hung up before the reply was all sent. */
+        @Volatile var hungUp = false
     }
 
     val songs = LinkedHashMap<String, Song>()
@@ -137,7 +139,12 @@ class FakeNavidrome : AutoCloseable {
         val out = socket.getOutputStream()
         if (!loginOk(params)) return json(out, error(40, "Wrong username or password"))
         when (endpoint) {
-            "stream" -> stream(socket, out, params["id"].orEmpty(), range, request)
+            "stream" -> try {
+                stream(socket, out, params["id"].orEmpty(), range, request)
+            } catch (e: java.io.IOException) {
+                request.hungUp = true
+                throw e
+            }
             "ping", "scrobble" -> json(out, "")
             "getSong" -> songs[params["id"]]?.let { json(out, "\"song\":${songJson(it)}") }
                 ?: json(out, error(70, "Song not found"))

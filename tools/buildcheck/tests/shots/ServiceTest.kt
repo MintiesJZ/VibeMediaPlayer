@@ -318,15 +318,58 @@ class ServiceTest {
         val p = s.player()
         assertEquals("nothing loaded until the launcher asks", 0, p.mediaItemCount)
         assertEquals(androidx.media3.common.Player.STATE_IDLE, p.playbackState)
+        val cache = com.saicmotor.media.service.MediaCache::class.java.getDeclaredField("cache").apply { isAccessible = true }
+        fun askedOfTheCar() = shadowOf(app).boundServiceConnections.count { "CarVolume" in it.javaClass.name }
+        assertEquals("the song cache isn't opened either", null, cache.get(null))
+        assertEquals("and nothing's asked of the car's adapter service: it's still starting", 0, askedOfTheCar())
         s.restoredByLauncher()
         assertEquals("sub:s3", p.currentMediaItem?.mediaId)
         assertTrue(p.playWhenReady)
         assertEquals(FROM_ITS_BEGINNING, p.currentPosition)
+        waitFor { cache.get(null) != null }
+        assertTrue("the song cache is open now", cache.get(null) != null)
+        assertEquals("and the car's volume can be reached", 1, askedOfTheCar())
         // The timing logged: the launcher asked, then the queue came back.
         fun field(name: String) = MediaService::class.java.getDeclaredField(name).apply { isAccessible = true }.get(s)
         assertTrue((field("traceLauncherAt") as Long) in 0..(field("traceQueueAt") as Long))
         assertEquals(0, field("traceOnDiskPct"))
         s.call("finishTrace")
+    }
+
+    /**
+     * If the launcher never asks, the car's volume is still reached once the
+     * car has had time to start (for a volume key the launcher ignores).
+     */
+    @Test
+    fun theCarsVolumeIsReachedOnceTheCarHasStarted() {
+        fun askedOfTheCar() = shadowOf(app).boundServiceConnections.count { "CarVolume" in it.javaClass.name }
+        val s = service()
+        idle(20_000)
+        assertEquals(0, askedOfTheCar())
+        idle(6_000)
+        assertEquals(1, askedOfTheCar())
+        s.onDestroy()
+    }
+
+    /**
+     * The app is one process.  The launcher's browse services each had
+     * their own up to 1.0.16 (as the stock app's do), and the launcher
+     * starts two of them as the head unit boots: two more processes
+     * starting just as the car's own services are.
+     */
+    @Test
+    fun theAppIsOneProcess() {
+        val manifest = java.io.File(System.getProperty("app.manifest")!!)
+        val doc = javax.xml.parsers.DocumentBuilderFactory.newInstance().apply { isNamespaceAware = true }
+            .newDocumentBuilder().parse(manifest)
+        val android = "http://schemas.android.com/apk/res/android"
+        for (tag in listOf("application", "service", "receiver", "activity", "provider")) {
+            val nodes = doc.getElementsByTagName(tag)
+            for (i in 0 until nodes.length) {
+                val e = nodes.item(i) as org.w3c.dom.Element
+                assertEquals("${e.getAttributeNS(android, "name")} in a process of its own", "", e.getAttributeNS(android, "process"))
+            }
+        }
     }
 
     /**

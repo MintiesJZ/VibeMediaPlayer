@@ -768,13 +768,51 @@ class StreamingTest {
             heard.first().second * OggOpus.PACKET_MS in was - 31_000..was - 29_000)
         assertInOrder(heard.map { it.second })
 
-        // The rest still comes, and all of it is kept.
+        // The rest still comes, and all of it is kept — in the one reply
+        // from the server: skipping back didn't drop the download (the
+        // reply is held open while the player reads again from the top).
         drive(s, 120_000, until = { MediaCache.isCached(app, "sub:$id") })
         println("requests: ${server.streamRequests(id).map { "${it.range} ${it.sent.get()}" }}")
         assertKeptWhole(0)
+        assertEquals("asked for once", 1, server.streamRequests(id).size)
         assertTrue(p.playWhenReady)
         assertEquals("the same song", "sub:$id", p.currentMediaItem?.mediaId)
         s.onDestroy()
+    }
+
+    /**
+     * The reply is only held open for the song that's playing to come back
+     * to: one left for the next song, or still coming when the app stops,
+     * is hung up on at once (held, it would go on coming for nothing).
+     */
+    @Test
+    fun aSongLeftWhileItsStillComingIsHungUpOnAtOnce() {
+        server.addSongs(3, seconds = 300)
+        server.bytesPerSecond = 300_000
+        val ids = server.songs.keys.toList()
+        val s = startPlaying()
+        val p = s.player()
+        drive(s, 10_000, until = { heard.size >= 100 })
+        p.pause()
+        fun hungUpSoon(id: String): Boolean {
+            val until = System.currentTimeMillis() + 1_500      // well inside the time a reply is held
+            while (System.currentTimeMillis() < until && server.streamRequests(id).none { it.hungUp }) drive(s, 100)
+            return server.streamRequests(id).any { it.hungUp }
+        }
+        assertTrue("still coming", !MediaCache.isCached(app, "sub:${ids[0]}"))
+        p.seekToNextMediaItem()
+        assertTrue("the song left is hung up on", hungUpSoon(ids[0]))
+
+        // The song that's now playing: skipped back in (its reply is held)…
+        drive(s, 20_000, until = { p.bufferedPosition >= 30_000 })
+        assertTrue(s.seekBy(10_000L))
+        assertTrue(s.seekBy(-5_000L))
+        assertTrue("still coming", !MediaCache.isCached(app, "sub:${ids[1]}"))
+        // …and the app stops.
+        s.onDestroy()
+        val until = System.currentTimeMillis() + 1_500
+        while (System.currentTimeMillis() < until && server.streamRequests(ids[1]).none { it.hungUp }) Thread.sleep(20)
+        assertTrue("nothing's left open when the app stops", server.streamRequests(ids[1]).all { it.hungUp })
     }
 
     private fun MediaService.seekBy(ms: Long): Boolean =
