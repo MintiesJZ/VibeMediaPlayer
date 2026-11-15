@@ -11,7 +11,6 @@ import android.content.IntentFilter
 import android.database.ContentObserver
 import android.os.Handler
 import android.os.Looper
-import android.os.Process
 import android.graphics.Bitmap
 import android.graphics.drawable.BitmapDrawable
 import android.media.AudioFocusRequest
@@ -72,8 +71,6 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import java.util.concurrent.atomic.AtomicReference
-import kotlin.concurrent.thread
 import kotlin.random.Random
 
 /**
@@ -823,35 +820,9 @@ class MediaService : MediaBrowserServiceCompat() {
         // queue ready here (1.0 – 1.0.15) left the launcher's battery diagram
         // orange for the drive, and the launcher asking a second later.
         if (carryOnAfterCrash()) return
-        if (SystemClock.elapsedRealtime() < STARTUP_WINDOW_MS) {
-            startTrace(0L)
-            readSavedQueueAhead()
-        }
+        if (SystemClock.elapsedRealtime() < STARTUP_WINDOW_MS) startTrace(0L)
     }
 
-    /** The saved queue as [readSavedQueueAhead] read it, for the server and login it was read with. */
-    private class SavedQueue(val config: SubsonicSettings.Config, val items: List<MediaItem>)
-    private var savedQueueAhead: AtomicReference<SavedQueue?>? = null
-
-    /**
-     * Reads the saved queue while waiting for the launcher to ask for the
-     * music, so that's done when it does: a small file, read and turned into
-     * songs on one thread that gives way to everything else — the one thing
-     * done ahead while the car starts (see [onCreate]).  Nothing touches
-     * the player.
-     */
-    private fun readSavedQueueAhead() {
-        if (PlaybackSettings.startupMode(this) == PlaybackSettings.StartupMode.NOTHING) return
-        val config = subsonicCfg() ?: return
-        val read = AtomicReference<SavedQueue?>()
-        savedQueueAhead = read
-        thread(name = "CarMedia:SavedQueue", isDaemon = true) {
-            try {
-                Process.setThreadPriority(Process.THREAD_PRIORITY_LOWEST)
-                read.set(SavedQueue(config, resumeStore.loadSnapshot().mapNotNull { savedToPlayable(it, config) }))
-            } catch (_: Exception) {}
-        }
-    }
 
     // ── Carrying on after stopping unexpectedly ────────────────────────────
 
@@ -1040,6 +1011,7 @@ class MediaService : MediaBrowserServiceCompat() {
         override fun onPlaybackStateChanged(playbackState: Int) {
             if (settingQueue) return
             if (playbackState == Player.STATE_READY) {
+                reloadingFromDisk = null
                 traceSongLoaded()
                 streamRetries = 0
                 loginRefused = false
@@ -1105,6 +1077,18 @@ class MediaService : MediaBrowserServiceCompat() {
     }
 
     /**
+     * Puts the song to start with in the player, on its own, and tells the
+     * player to load it: the first step of [playQueue], which puts the rest
+     * of the queue around it and sees to everything else while it loads.
+     */
+    private fun loadFirst(item: MediaItem, positionMs: Long) {
+        settingQueue = true
+        player.setMediaItem(item, positionMs)
+        player.prepare()
+        traceLoading()
+    }
+
+    /**
      * True while [playQueue] is putting a queue in the player, piece by
      * piece: what's done when the song, the queue or the player's state
      * changes waits until it's all in, and is done once ([songChanged]).
@@ -1113,6 +1097,7 @@ class MediaService : MediaBrowserServiceCompat() {
 
     /** Another song is the one playing (or about to): tell the car, keep it for next time, look ahead. */
     private fun songChanged(item: MediaItem?, durationMs: Long? = null) {
+        reloadingFromDisk = null
         // The item itself: player.mediaMetadata may not have settled yet.
         session.setMetadata(buildMetadata(item, durationMs))
         session.setPlaybackState(buildPlaybackState())
@@ -1472,17 +1457,54 @@ class MediaService : MediaBrowserServiceCompat() {
     private fun seekWouldRestart(): Boolean {
         val timeline = player.currentTimeline
         if (timeline.isEmpty) return false
+        if (reloadingFromDisk != null && reloadingFromDisk == player.currentMediaItem?.mediaId) return false
         val window = timeline.getWindow(player.currentMediaItemIndex, Timeline.Window())
         return !window.isPlaceholder && !window.isSeekable
+    }
+
+    /** The song being loaded again by [reloadFromDisk], until it's loaded. */
+    private var reloadingFromDisk: String? = null
+
+    /**
+     * A song that began as a stream stays one the player can't skip through,
+     * even once it's all on disk: the player only finds out where things
+     * are in a song as it starts loading it.  So once it's downloaded it's
+     * loaded again, from disk, at [positionMs] — and can be skipped through
+     * like any other.  (It used to be refused for as long as the song
+     * played.)  False if it isn't all on disk yet.
+     */
+    private fun reloadFromDisk(positionMs: Long): Boolean {
+        val item = player.currentMediaItem ?: return false
+        if (!MediaCache.isCached(this, item.mediaId)) return false
+        Log.i(KEY_TAG, "  → it's downloaded now: loading it from disk to skip through it")
+        reloadingFromDisk = item.mediaId
+        val index = player.currentMediaItemIndex
+        settingQueue = true          // the same song, still playing: nothing to tell anyone
+        try {
+            player.stop()
+            player.seekTo(index, positionMs)
+            player.prepare()
+        } finally {
+            settingQueue = false
+        }
+        session.setPlaybackState(buildPlaybackState())
+        return true
+    }
+
+    /** Moves to [positionMs] in the song.  False if it can't be yet: it's still streaming. */
+    private fun seekInSong(positionMs: Long): Boolean {
+        if (!seekWouldRestart()) {
+            player.seekTo(positionMs)
+            return true
+        }
+        if (reloadFromDisk(positionMs)) return true
+        Log.i(KEY_TAG, "  → can't skip through this song until it's downloaded")
+        return false
     }
 
     /** Seeks within the song.  Returns false if it hit the start or end (or can't seek). */
     private fun seekBy(deltaMs: Long): Boolean {
         if (player.mediaItemCount == 0) return false
-        if (seekWouldRestart()) {
-            Log.i(KEY_TAG, "  → can't skip through this song until it's downloaded")
-            return false
-        }
         val duration = player.duration
         var target = player.currentPosition + deltaMs
         var hitEdge = false
@@ -1492,8 +1514,7 @@ class MediaService : MediaBrowserServiceCompat() {
             target = (duration - 1_000L).coerceAtLeast(0L)
             hitEdge = true
         }
-        player.seekTo(target)
-        return !hitEdge
+        return seekInSong(target) && !hitEdge
     }
 
     /**
@@ -1792,11 +1813,7 @@ class MediaService : MediaBrowserServiceCompat() {
         }
         override fun onSeekTo(pos: Long) {
             stopFastSeek()
-            if (pos > 0 && seekWouldRestart()) {
-                Log.i(KEY_TAG, "  → can't skip through this song until it's downloaded")
-                return
-            }
-            player.seekTo(pos)
+            if (pos > 0) seekInSong(pos) else player.seekTo(pos)
         }
 
         override fun onSetShuffleMode(shuffleMode: Int) {
@@ -2139,10 +2156,11 @@ class MediaService : MediaBrowserServiceCompat() {
         parentId:        String?,
         durationHintMs:  Long? = null,
         /** False: load the queue but stay paused. */
-        play:            Boolean = true
+        play:            Boolean = true,
+        /** The song to start with is in the player already, on its own ([loadFirst]). */
+        loading:         Boolean = false
     ) {
         if (items.isEmpty()) return
-        savedQueueAhead = null   // what was saved when the car started is no longer the queue
         queueGeneration++
         queueKind     = kind
         streamRetries = 0
@@ -2159,9 +2177,7 @@ class MediaService : MediaBrowserServiceCompat() {
         // the music was waiting for all of them.)
         settingQueue = true
         try {
-            player.setMediaItem(items[start], startPositionMs)
-            player.prepare()
-            traceLoading()
+            if (!loading) loadFirst(items[start], startPositionMs)
             if (start > 0) player.addMediaItems(0, items.subList(0, start))
             if (start < items.size - 1) player.addMediaItems(start + 1, items.subList(start + 1, items.size))
             applyShuffleOrder(start)
@@ -2525,32 +2541,55 @@ class MediaService : MediaBrowserServiceCompat() {
         // that, so carry on with it; any other saved queue isn't.
         if (mode == PlaybackSettings.StartupMode.SHUFFLE_LIBRARY && !library) return false
         val cfg = subsonicCfg() ?: return false
-        // Read ahead as the car started — if that's done (it isn't waited
-        // for: its thread gives way to everything), this is the first queue
-        // since, and the server and login are still those it was read with.
-        val ahead = savedQueueAhead?.also { savedQueueAhead = null }?.get()?.takeIf { it.config == cfg }
-        val items = ahead?.items
-            ?: withContext(Dispatchers.IO) { resumeStore.loadSnapshot() }.mapNotNull { savedToPlayable(it, cfg) }
-        traceQueueRead()
-        if (items.isEmpty()) return false
-        val current = saved.item?.let { s -> items.indexOfFirst { it.mediaId == s.mediaId } } ?: -1
-        var start    = current.coerceAtLeast(0)
-        var position = if (current >= 0) saved.positionMs else 0L
-        if (mode == PlaybackSettings.StartupMode.SHUFFLE_LIBRARY && current >= 0 && current + 1 < items.size) {
-            // A fresh song, not the middle of the last one: the first one
-            // coming up that's already downloaded, so it starts without
-            // waiting for the network.
-            val ahead = (current + 1 until minOf(items.size, current + 11)).toList()
-            start = withContext(Dispatchers.IO) {
-                ahead.firstOrNull { MediaCache.isCached(this@MediaService, items[it].mediaId) }
-            } ?: (current + 1)
-            position = 0L
+        // The song first: the player's told to load it as soon as it's known
+        // which, and the queue is read and put around it while it loads.
+        // (Reading the queue's file and turning a couple of hundred songs
+        // into a queue takes the head unit a few tenths of a second as the
+        // car starts.  Nothing is read before the launcher asks: see
+        // CLAUDE.md, "Quiet while the car starts".)  All in one go, on this
+        // thread, so nothing else finds the queue half there.
+        var loading: MediaItem? = null
+        try {
+            // Carrying on where it was: the song is in the saved state itself.
+            if (mode != PlaybackSettings.StartupMode.SHUFFLE_LIBRARY) {
+                loading = saved.item?.let { savedToPlayable(it, cfg) }?.also { loadFirst(it, saved.positionMs) }
+            }
+            val snapshot = resumeStore.loadSnapshot()
+            traceQueueRead()
+            val current  = saved.item?.let { s -> snapshot.indexOfFirst { it.mediaId == s.mediaId } } ?: -1
+            var startAt  = current.coerceAtLeast(0)
+            var position = if (current >= 0) saved.positionMs else 0L
+            if (mode == PlaybackSettings.StartupMode.SHUFFLE_LIBRARY && current >= 0 && current + 1 < snapshot.size) {
+                // A fresh song, not the middle of the last one: the first one
+                // coming up that's already downloaded, so it starts without
+                // waiting for the network.
+                startAt = (current + 1 until minOf(snapshot.size, current + 11))
+                    .firstOrNull { MediaCache.isCached(this, snapshot[it].mediaId) } ?: (current + 1)
+                position = 0L
+            }
+            if (loading == null) {
+                loading = snapshot.getOrNull(startAt)?.let { savedToPlayable(it, cfg) }?.also { loadFirst(it, position) }
+            }
+            val items = snapshot.mapNotNull { savedToPlayable(it, cfg) }
+            // Where the song that's loading is in the queue (nowhere, if it
+            // was saved without its queue: then the queue starts at the top).
+            val start = loading?.let { l -> items.indexOfFirst { it.mediaId == l.mediaId } } ?: -1
+            if (items.isEmpty()) {
+                if (loading != null) { player.stop(); player.clearMediaItems() }
+                return false
+            }
+            Log.i(TAG, "Restoring the saved queue (${items.size} songs, ${saved.kind}) ${if (play) "playing" else "paused"}")
+            // The saved copy is already in play order.
+            player.shuffleModeEnabled = false
+            if (start >= 0) {
+                playQueue(items, start, position, saved.kind, saved.parentId, play = play, loading = true)
+            } else {
+                playQueue(items, startAt.coerceIn(0, items.size - 1), position, saved.kind, saved.parentId, play = play)
+            }
+            return true
+        } finally {
+            settingQueue = false
         }
-        Log.i(TAG, "Restoring the saved queue (${items.size} songs, ${saved.kind}) ${if (play) "playing" else "paused"}")
-        // The saved copy is already in play order.
-        player.shuffleModeEnabled = false
-        playQueue(items, start, position, saved.kind, saved.parentId, play = play)
-        return true
     }
 
     // ── Start-up timing ────────────────────────────────────────────────────
@@ -2602,8 +2641,8 @@ class MediaService : MediaBrowserServiceCompat() {
         if (now - from > STARTUP_WINDOW_MS * 2) return   // not a start-up any more
         fun rel(t: Long) = if (t >= 0) t - from else -1L
         val onDisk = if (traceOnDiskPct == PARTLY) "partly" else "$traceOnDiskPct%"
-        Log.i(TAG, "Startup timing: launcher asked ${rel(traceLauncherAt)} ms, queue read ${rel(traceReadAt)} ms, " +
-            "song loading from ${rel(traceLoadingAt)} ms, queue back ${rel(traceQueueAt)} ms, song loaded ${rel(traceLoadedAt)} ms, " +
+        Log.i(TAG, "Startup timing: launcher asked ${rel(traceLauncherAt)} ms, song loading from ${rel(traceLoadingAt)} ms, " +
+            "queue read ${rel(traceReadAt)} ms, queue back ${rel(traceQueueAt)} ms, song loaded ${rel(traceLoadedAt)} ms, " +
             "playing ${now - from} ms after the head unit started; first song $onDisk on disk")
     }
 

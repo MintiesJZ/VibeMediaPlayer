@@ -322,37 +322,30 @@ class ServiceTest {
     }
 
     /**
-     * The one thing done ahead while the car starts: the saved queue is
-     * read, on a thread that gives way to everything, so that's done when
-     * the launcher asks.  It's what would be read then — unless the server
-     * or login has changed since.
+     * Nothing is read ahead of the launcher asking, so it's the server and
+     * login as they are then that the queue is made for; and a song saved
+     * without its queue (it isn't in it) doesn't start one: the queue
+     * starts at the top.
      */
     @Test
-    fun theSavedQueueIsReadAheadWithoutTouchingThePlayer() {
-        fun MediaService.readAhead() = MediaService::class.java.getDeclaredField("savedQueueAhead")
-            .apply { isAccessible = true }.get(this) as java.util.concurrent.atomic.AtomicReference<*>?
+    fun theQueueIsReadWhenTheLauncherAsks() {
         fun address(s: MediaService) = s.player().currentMediaItem?.localConfiguration?.uri.toString()
         savePlayingState()
         val s = service()
-        val read = s.readAhead()!!
-        waitFor { read.get() != null }
-        assertEquals("the player's left alone", 0, s.player().mediaItemCount)
+        SubsonicSettings.save(app, SubsonicSettings.Config("http://127.0.0.1:9", "someone", "secret"))
         s.restoredByLauncher()
-        assertEquals(8, s.player().mediaItemCount)
         assertEquals("sub:s3", s.player().currentMediaItem?.mediaId)
         assertEquals(42_000L, s.player().currentPosition)
-        assertTrue(address(s), "u=me&" in address(s))
-        assertEquals("used once", null, s.readAhead())
+        assertTrue(address(s), "u=someone&" in address(s))
         s.onDestroy()
 
-        // The login's changed in Settings before the launcher asks: read again, for the new one.
+        ResumeStore(app).saveItem(item(99), 42_000L)
         val second = service()
-        val again = second.readAhead()!!
-        waitFor { again.get() != null }
-        SubsonicSettings.save(app, SubsonicSettings.Config("http://127.0.0.1:9", "someone", "secret"))
         second.restoredByLauncher()
-        assertEquals("sub:s3", second.player().currentMediaItem?.mediaId)
-        assertTrue(address(second), "u=someone&" in address(second))
+        assertEquals(8, second.player().mediaItemCount)
+        assertEquals("sub:s0", second.player().currentMediaItem?.mediaId)
+        assertEquals(0L, second.player().currentPosition)
+        assertEquals((0 until 8).map { "sub:s$it" }, (0 until 8).map { second.player().getMediaItemAt(it).mediaId })
     }
 
     /**
@@ -818,7 +811,8 @@ class ServiceTest {
     /**
      * The player itself: a song streaming from the server (no length, like a
      * transcoded one) gets its length from the song's details, isn't taken
-     * for live radio, and holding a skip key doesn't start it over.
+     * for live radio, and while it's still coming holding a skip key doesn't
+     * start it over.
      */
     @Test
     fun streamingSongIsNotLiveRadioAndIsntSkippedThrough() {
@@ -836,9 +830,12 @@ class ServiceTest {
                             while (!line.isNullOrEmpty()) line = reader.readLine()
                             val out = it.getOutputStream()
                             if (request.contains("/rest/stream")) {
-                                // No Content-Length: the connection closing ends it.
+                                // No Content-Length: the connection closing ends it —
+                                // and it's kept open, the song still on its way.
                                 out.write("HTTP/1.1 200 OK\r\nContent-Type: audio/ogg\r\nConnection: close\r\n\r\n".toByteArray())
-                                out.write(stream)
+                                out.write(stream, 0, stream.size / 2)
+                                out.flush()
+                                Thread.sleep(60_000)
                             } else {
                                 val body = """{"subsonic-response":{"status":"ok","version":"1.16.1"}}""".toByteArray()
                                 out.write("HTTP/1.1 200 OK\r\nContent-Length: ${body.size}\r\nConnection: close\r\n\r\n".toByteArray())

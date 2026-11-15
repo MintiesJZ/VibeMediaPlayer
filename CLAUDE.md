@@ -62,7 +62,7 @@ repository is MintiesJZ/VibeMediaPlayer, and GitHub sends the old address on.
 
 `tools/buildcheck` builds the app's sources with the same dependencies as
 `app/build.gradle` and runs the Robolectric tests in `tools/buildcheck/tests`
-(46 service tests, 25 streaming tests, 3 for `LiveDownload`, 21 screenshot tests →
+(46 service tests, 26 streaming tests, 3 for `LiveDownload`, 21 screenshot tests →
 `tools/buildcheck/app/build/shots`, 7 against a real Navidrome, skipped
 unless one is running: `tools/navidrome/README.md`, and 33 with the car's own
 launcher — 7 of them with SmartTube too — skipped unless their APKs are
@@ -234,13 +234,15 @@ are the main thread here.
   the adapter service ran a second late and the launcher asked a second
   later too — no sooner for the music, and an orange battery most days.
   (Since: the adapter service subscribes 14.5–14.9 s after boot, the HAL's
-  pass is at 15.1–15.5 s, the launcher asks at ~16 s and the music plays
-  1.1–1.5 s after that — nearly all of it first-time work on a busy head
-  unit, where a couple of hundred songs take a few tenths of a second to
-  turn into a queue.)  One thing is done ahead: the saved queue's small
-  file is read on a thread at the lowest priority (`readSavedQueueAhead`),
-  and used when the launcher asks if it's done by then; it never touches
-  the player.
+  pass is at 15.0–15.5 s, the launcher asks at ~16 s and the music plays
+  ~1 s after that — nearly all of it first-time work on a busy head unit.)
+  Nothing at all is done ahead: 1.0.16-pre2 and -pre3 read the saved
+  queue's file meanwhile, on a thread at the lowest priority, and the
+  adapter service's margin went from ~0.5 s to ~0.2 s in their four logs
+  (the garbage collector and the like it sets going aren't low priority).
+  The song to carry on with starts loading the moment the launcher asks
+  instead (`restoreFromSnapshot`: it's in the saved state; the queue's
+  file is read once it's loading).
   In a logcat: `LAU.EvBatteryView: onChargePercentChange: percent: 98,range=-1,…`
   is orange, `range=0` green; `[CarAdapterSettingManager]
   ID_IMCU_VEHICLE_ELECTRIC_RANGE_DSP_CMD = 0` is the signal being heard.
@@ -316,8 +318,14 @@ are the main thread here.
   connection (Wi-Fi → mobile data leaving home, a dead spot) restarted it
   from the beginning.  `SongSourceFactory` gives the player each song's
   duration from its details, so it carries on from where it dropped.
-  Seeking such a song would also restart it (it isn't seekable until it's
-  downloaded), so skipping through it is refused (`seekWouldRestart`).
+  Seeking such a song would also restart it, so skipping through it is
+  refused while it's still coming (`seekWouldRestart`).  The player only
+  learns its way around a song as it starts loading it, so a song that
+  began as a stream stays that way for it even when it's all on disk: once
+  it is, a skip loads it again from disk at the place asked for
+  (`reloadFromDisk`).  (Up to 1.0.16-pre3 it was refused for as long as the
+  song played — any song that hadn't been downloaded ahead: one picked
+  from the library, or reached by skipping on past the ten downloaded.)
   Carrying on part-way when the car starts needs the whole song on disk for
   the same reason, so the player reads up to ten minutes ahead
   (`MAX_BUFFER_MS`): the whole of nearly any song, straight away.
@@ -366,9 +374,9 @@ are the main thread here.
   reported (half-way, or four minutes), was reported before the car was
   switched off: not again (`startPlayReport`).
 - The log shows how each start-up went ("Startup timing: …": when the
-  launcher asked, the saved queue was read, the player was told to load the
-  first song, the whole queue was back in the player, the song had loaded,
-  and the music played).
+  launcher asked, the player was told to load the first song, the saved
+  queue was read, the whole queue was back in the player, the song had
+  loaded, and the music played).
 - The head unit's network passes nothing for most of the first minute after
   it boots (and the server may not be reachable for a while after that):
   the music plays from disk meanwhile and look-ahead downloads are tried

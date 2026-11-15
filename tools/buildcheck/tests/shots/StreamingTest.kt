@@ -643,6 +643,42 @@ class StreamingTest {
      * from where it was when the car starts again (with no signal, here).
      * (Only part there, it can't be picked up part-way: it started over.)
      */
+    /**
+     * A song that began as a stream (it wasn't downloaded when it came up)
+     * can be skipped through once it's all on disk.  The player only learns
+     * its way around a song as it starts loading it, so it went on being
+     * refused for as long as the song played; now it's loaded again from
+     * disk, at the place asked for.  (In the car: skipping on past the songs
+     * downloaded ahead, then holding the skip key.)
+     */
+    @Test
+    fun aSongThatBeganAsAStreamCanBeSkippedThroughOnceItsDownloaded() {
+        server.addSongs(2, seconds = 300)
+        val id = server.songs.keys.first()
+        val s = startPlaying()
+        val p = s.player()
+        drive(s, 60_000, until = { heard.size >= 100 && MediaCache.isCached(app, "sub:$id") })
+        assertTrue("downloaded", MediaCache.isCached(app, "sub:$id"))
+        assertTrue("but the player still takes it for a stream", !p.isCurrentMediaItemSeekable)
+        val seekBy = MediaService::class.java.getDeclaredMethod("seekBy", Long::class.javaPrimitiveType).apply { isAccessible = true }
+        heard.clear()
+        assertTrue("skipped ahead", seekBy.invoke(s, 120_000L) as Boolean)
+        // Held: on it goes, 5 s at a time, without loading the song again each time.
+        assertTrue(seekBy.invoke(s, 5_000L) as Boolean)
+        assertTrue(seekBy.invoke(s, 5_000L) as Boolean)
+        drive(s, 60_000, until = { heard.count { it.first == 0 } >= 100 })
+        val song0 = heard.filter { it.first == 0 }.map { it.second }
+        assertTrue("played on", song0.size >= 100)
+        assertTrue("from two minutes further on, not from the start: packet ${song0.first()}",
+            song0.first() * OggOpus.PACKET_MS >= 125_000)
+        assertTrue("and can be skipped through like any other now", p.isCurrentMediaItemSeekable)
+        assertTrue(p.playWhenReady)
+        assertEquals("nothing fetched again", 1, server.streamRequests(id).size)
+        assertEquals("the same song, the same queue", "sub:$id", p.currentMediaItem?.mediaId)
+        assertEquals(2, p.mediaItemCount)
+        s.onDestroy()
+    }
+
     @Test
     fun aLongSongLeftEarlyCarriesOnWhereItWas() {
         server.addSongs(1, seconds = 400)
