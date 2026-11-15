@@ -138,10 +138,19 @@ jobs:
             *)   kind="--latest" ;;
           esac
           apk="dist/VibeMediaPlayer-$VERSION-MG4-platform-signed.apk"
-          # Also under the project's old name: versions up to 1.0.16-pre2 ask
-          # for the APK by it when they check for updates.
-          old="dist/CarMediaPlayer-$VERSION-MG4-platform-signed.apk"
-          cp "$apk" "$old"
-          gh release create "v$VERSION" "$apk" "$old" \
+          files="$apk"
+          # Versions up to 1.0.16-pre2 ask for the APK by the project's old
+          # name when they check for updates.  The first full release since
+          # the renaming carries it under both names, so they can get onto
+          # it (as do the test builds before it); the releases after that
+          # carry the one APK.  "Since the renaming" is: while the latest
+          # full release is still 1.0.15.
+          latest=$(gh release view -R "$GITHUB_REPOSITORY" --json tagName -q .tagName)
+          if [ "$latest" = "v1.0.15" ]; then
+            old="dist/CarMediaPlayer-$VERSION-MG4-platform-signed.apk"
+            cp "$apk" "$old"
+            files="$apk $old"
+          fi
+          gh release create "v$VERSION" $files \
             -R "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" \
             --title "$VERSION" --notes-file notes.md $kind

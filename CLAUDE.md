@@ -11,8 +11,10 @@ repository is MintiesJZ/VibeMediaPlayer, and GitHub sends the old address on.
 
 - A release is the signed APK, published as a GitHub release on this repo:
   tag `v<versionName>`, the APK attached as
-  `VibeMediaPlayer-<versionName>-MG4-platform-signed.apk` (and again as
-  `CarMediaPlayer-…`, the name versions up to 1.0.16-pre2 ask for).  The **Release**
+  `VibeMediaPlayer-<versionName>-MG4-platform-signed.apk`.  (The first full
+  release after 1.0.15 carries it as `CarMediaPlayer-…` too, the name
+  versions up to 1.0.16-pre2 ask for, so they can update onto it; the
+  workflow stops doing that by itself after that release.)  The **Release**
   workflow (`.github/workflows/release.yml`) does this by itself when a push
   to `master` carries a versionName that has no release yet: it builds, runs
   the tests, signs with the AOSP test key (downloaded, checked against the
