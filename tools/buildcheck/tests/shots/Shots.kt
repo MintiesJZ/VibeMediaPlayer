@@ -282,6 +282,23 @@ class Shots {
         com.saicmotor.media.update.Updater.post(com.saicmotor.media.update.Updater.Status.UpToDate("2.0.10"))
         settle()
         a.snap("23_settings_update_latest_night")
+        com.saicmotor.media.update.Updater.post(com.saicmotor.media.update.Updater.Status.Available("2.0.11", listOf(
+            com.saicmotor.media.update.Updater.Change("2.0.11", listOf("- Plays sooner when the car starts.", "- Fixed the cover sometimes missing.")))))
+        settle()
+        a.findViewById<android.view.View>(com.saicmotor.media.R.id.server_heading)?.let { v ->
+            (v.parent.parent as? android.widget.ScrollView)?.scrollTo(0, 10_000)
+        }
+        settle()
+        a.snap("24_settings_update_available_night")
+        com.saicmotor.media.update.Updater.post(com.saicmotor.media.update.Updater.Status.Available("2.1", listOf(
+            com.saicmotor.media.update.Updater.Change("2.1", listOf("- Plays sooner when the car starts.")),
+            com.saicmotor.media.update.Updater.Change("2.0.11", listOf("- Fixed the cover sometimes missing.", "- Quieter at start-up.")))))
+        settle()
+        a.findViewById<android.view.View>(com.saicmotor.media.R.id.server_heading)?.let { v ->
+            (v.parent.parent as? android.widget.ScrollView)?.scrollTo(0, 10_000)
+        }
+        settle()
+        a.snap("25_settings_update_available_two_night")
         com.saicmotor.media.update.Updater.post(com.saicmotor.media.update.Updater.Status.Idle)
     }
     @Test fun library_artists() {

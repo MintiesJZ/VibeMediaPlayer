@@ -552,7 +552,8 @@ class ServiceTest {
      * A stand-in for GitHub's site: asked for [path] it sends the caller on
      * to [sendsOnTo] (or answers 404 if that's null).  Returns its address.
      */
-    private fun gitHubSendingOn(vararg sendsOnTo: Pair<String, String?>): String {
+    private fun gitHubSendingOn(vararg sendsOnTo: Pair<String, String?>, asked: MutableList<String>? = null,
+                                files: Map<String, String> = emptyMap()): String {
         val socket = java.net.ServerSocket(0, 10, java.net.InetAddress.getLoopbackAddress())
         val site = "http://127.0.0.1:${socket.localPort}"
         kotlin.concurrent.thread(isDaemon = true) {
@@ -560,9 +561,19 @@ class ServiceTest {
                 val client = try { socket.accept() } catch (_: Exception) { break }
                 client.use {
                     val path = it.getInputStream().bufferedReader().readLine()?.split(' ')?.getOrNull(1)
+                    if (path != null) asked?.add(path)
                     val to = sendsOnTo.firstOrNull { (from, _) -> from == path }?.second
-                    val reply = if (to != null) "HTTP/1.1 302 Found\r\nLocation: $site$to\r\n" else "HTTP/1.1 404 Not Found\r\n"
-                    it.getOutputStream().apply { write("${reply}Content-Length: 0\r\nConnection: close\r\n\r\n".toByteArray()); flush() }
+                    val file = files[path]?.toByteArray()
+                    val reply = when {
+                        file != null -> "HTTP/1.1 200 OK\r\n"
+                        to != null -> "HTTP/1.1 302 Found\r\nLocation: $site$to\r\n"
+                        else -> "HTTP/1.1 404 Not Found\r\n"
+                    }
+                    it.getOutputStream().apply {
+                        write("${reply}Content-Length: ${file?.size ?: 0}\r\nConnection: close\r\n\r\n".toByteArray())
+                        file?.let { f -> write(f) }
+                        flush()
+                    }
                 }
             }
         }
@@ -596,6 +607,100 @@ class ServiceTest {
         } finally {
             u.releases = before
         }
+    }
+
+    /**
+     * A newer version found isn't installed until the driver says so: the
+     * check says it's there and asks; only Install downloads it.  Not now
+     * leaves it, and nothing's downloaded.
+     */
+    @Test
+    fun updaterAsksBeforeInstallingANewerVersion() {
+        val u = com.saicmotor.media.update.Updater
+        val before = u.releases
+        val asked = java.util.Collections.synchronizedList(mutableListOf<String>())
+        fun waitFor(what: String, ok: (com.saicmotor.media.update.Updater.Status) -> Boolean): com.saicmotor.media.update.Updater.Status {
+            val until = System.currentTimeMillis() + 10_000
+            while (System.currentTimeMillis() < until && !ok(u.status.value)) Thread.sleep(20)
+            assertTrue("$what: ${u.status.value}", ok(u.status.value))
+            return u.status.value
+        }
+        fun downloads() = asked.count { "/download/" in it && it.endsWith(".apk") }
+        try {
+            val installed = app.packageManager.getPackageInfo(app.packageName, 0).versionName
+            val site = gitHubSendingOn("/Someone/App/releases/latest" to "/Someone/App/releases/tag/v99.0", asked = asked,
+                files = mapOf("/Someone/App/releases/download/v99.0/changes.txt" to """
+                    ## 99.0
+                    - Plays faster.
+                    ## 98.0
+                    - Plays louder.
+                    - Plays longer.
+                    ## $installed
+                    - What's installed already.
+                    ## 1.0
+                    - Long ago.
+                    """.trimIndent()))
+            u.releases = "$site/Someone/App/releases"
+
+            u.check(app)
+            val found = waitFor("a newer version is found") { it is com.saicmotor.media.update.Updater.Status.Available }
+                as com.saicmotor.media.update.Updater.Status.Available
+            assertEquals("99.0", found.version)
+            assertEquals("what's new since the version installed, newest first", listOf(
+                com.saicmotor.media.update.Updater.Change("99.0", listOf("- Plays faster.")),
+                com.saicmotor.media.update.Updater.Change("98.0", listOf("- Plays louder.", "- Plays longer."))), found.changes)
+            Thread.sleep(300)
+            assertEquals("and only asked about, not downloaded", 0, downloads())
+
+            u.notNow()
+            assertEquals(com.saicmotor.media.update.Updater.Status.Idle, u.status.value)
+            u.install(app)
+            Thread.sleep(300)
+            assertEquals("turned down: Install does nothing until it's found again", 0, downloads())
+            assertEquals(com.saicmotor.media.update.Updater.Status.Idle, u.status.value)
+
+            u.check(app)
+            waitFor("found again") { it is com.saicmotor.media.update.Updater.Status.Available }
+            u.install(app)
+            // (This made-up GitHub has no file to download.)
+            waitFor("Install downloads it") { it is com.saicmotor.media.update.Updater.Status.Failed }
+            assertEquals(1, downloads())
+            assertTrue(asked.last().endsWith("/Someone/App/releases/download/v99.0/VibeMediaPlayer-99.0-MG4-platform-signed.apk"))
+        } finally {
+            u.releases = before
+            u.post(com.saicmotor.media.update.Updater.Status.Idle)
+        }
+    }
+
+    /** What's new is read from the release's changes.txt: full releases newer than the one installed, up to the one offered. */
+    @Test
+    fun updaterReadsWhatsNew() {
+        val u = com.saicmotor.media.update.Updater
+        val text = """
+            ## 2.1
+            - Two-one.
+
+            ## 2.1-pre1
+            - A test build.
+            ## 2.0.10
+            - Two-oh-ten, first.
+              Two-oh-ten, second.
+            ## 2.0.9
+            - Installed.
+            ## 2.0.8
+            - Older.
+            """.trimIndent()
+        assertEquals(listOf(
+            com.saicmotor.media.update.Updater.Change("2.1", listOf("- Two-one.")),
+            com.saicmotor.media.update.Updater.Change("2.0.10", listOf("- Two-oh-ten, first.", "Two-oh-ten, second."))),
+            u.changesBetween(text, installed = "2.0.9", latest = "2.1"))
+        assertEquals("a test build of the version offered is installed", listOf(com.saicmotor.media.update.Updater.Change("2.1", listOf("- Two-one."))),
+            u.changesBetween(text, installed = "2.1-pre1", latest = "2.1"))
+        assertEquals("nothing past the version offered", listOf("2.0.10"),
+            u.changesBetween(text, installed = "2.0.9", latest = "2.0.10").map { it.version })
+        assertEquals("not a list of changes", emptyList<Any>(), u.changesBetween("<html>Not Found</html>", "2.0.9", "2.1"))
+        val many = (30 downTo 1).joinToString("\n") { "## 3.$it\n- Change $it." }
+        assertEquals("only so many", 8, u.changesBetween(many, installed = "3.0", latest = "3.30").size)
     }
 
     @Test

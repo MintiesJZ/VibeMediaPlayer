@@ -89,11 +89,15 @@
     <string name="startup_nothing">Don\'t play anything</string>
     <string name="startup_nothing_body">Music starts when you press play.</string>
     <string name="settings_version">VibeMediaPlayer %s</string>
-    <!-- Settings → updates (only checked when the button is pressed) -->
+    <!-- Settings → updates (only checked when the button is pressed, and only installed when asked to) -->
     <string name="update_heading">Updates</string>
     <string name="update_check">Check for updates</string>
     <string name="update_checking">Checking…</string>
     <string name="update_up_to_date">You have the latest version (%1$s).</string>
+    <string name="update_available">Version %1$s is available.</string>
+    <string name="update_whats_new">What\'s new</string>
+    <string name="update_install">Install</string>
+    <string name="update_not_now">Not now</string>
     <string name="update_downloading">Downloading %1$s… %2$d%%</string>
     <string name="update_installing">Installing %1$s. The app will restart.</string>
     <string name="update_confirming">Confirm the install on the screen.</string>

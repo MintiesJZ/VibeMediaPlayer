@@ -69,8 +69,10 @@ class SettingsFragment : Fragment() {
         } catch (_: Exception) { null }
         b.version.text = getString(R.string.settings_version, version ?: "")
 
-        // Updates: only when asked.
-        b.checkUpdates.setOnClickListener { Updater.checkAndInstall(ctx) }
+        // Updates: looked for only when asked, and installed only when asked.
+        b.checkUpdates.setOnClickListener { Updater.check(ctx) }
+        b.installUpdate.setOnClickListener { Updater.install(ctx) }
+        b.updateNotNow.setOnClickListener { Updater.notNow() }
         viewLifecycleOwner.lifecycleScope.launch {
             viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
                 Updater.status.collect { showUpdate(it) }
@@ -90,7 +92,14 @@ class SettingsFragment : Fragment() {
         val ctx = context ?: return
         val busy = status is Updater.Status.Checking || status is Updater.Status.Downloading ||
                    status is Updater.Status.Installing || status is Updater.Status.Confirming
+        val asking = status is Updater.Status.Available
         b.checkUpdates.isEnabled = !busy
+        b.checkUpdates.visibility = if (asking) View.GONE else View.VISIBLE
+        b.installUpdate.visibility = if (asking) View.VISIBLE else View.GONE
+        b.updateNotNow.visibility = if (asking) View.VISIBLE else View.GONE
+        val changes = (status as? Updater.Status.Available)?.changes.orEmpty()
+        b.updateChanges.visibility = if (changes.isEmpty()) View.GONE else View.VISIBLE
+        b.updateChanges.text = if (changes.isEmpty()) "" else whatsNew(changes)
         b.updateBusy.visibility = if (busy) View.VISIBLE else View.GONE
         b.updateIcon.visibility = View.GONE
         b.updateStatus.setTextColor(ContextCompat.getColor(ctx, if (busy) R.color.ink_2 else R.color.ink))
@@ -104,6 +113,7 @@ class SettingsFragment : Fragment() {
             Updater.Status.Checking      -> getString(R.string.update_checking)
             is Updater.Status.UpToDate   -> { icon(R.drawable.ic_check, R.color.accent_ink)
                                               getString(R.string.update_up_to_date, status.version) }
+            is Updater.Status.Available  -> getString(R.string.update_available, status.version)
             is Updater.Status.Downloading -> getString(R.string.update_downloading, status.version, status.percent)
             is Updater.Status.Installing -> getString(R.string.update_installing, status.version)
             Updater.Status.Confirming    -> getString(R.string.update_confirming)
@@ -119,6 +129,29 @@ class SettingsFragment : Fragment() {
                 }
             }
         }
+    }
+
+    /**
+     * "What's new", then each version (newest first) and its dot points.  A
+     * single version is the one offered (named beside the buttons already),
+     * so it isn't named again.
+     */
+    private fun whatsNew(changes: List<Updater.Change>): CharSequence {
+        val ctx = requireContext()
+        val ink = ContextCompat.getColor(ctx, R.color.ink)
+        val text = android.text.SpannableStringBuilder()
+        fun heading(s: String) {
+            val start = text.length
+            text.append(s)
+            text.setSpan(android.text.style.ForegroundColorSpan(ink), start, text.length, 0)
+            text.setSpan(android.text.style.StyleSpan(android.graphics.Typeface.BOLD), start, text.length, 0)
+        }
+        heading(getString(R.string.update_whats_new))
+        for (change in changes) {
+            if (changes.size > 1) { text.append("\n"); heading(change.version) }
+            for (note in change.notes) text.append("\n").append(note.replaceFirst(Regex("^[-*•]\\s*"), "•  "))
+        }
+        return text
     }
 
     private fun saveAndConnect() {

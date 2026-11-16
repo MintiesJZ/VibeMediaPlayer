@@ -10,6 +10,9 @@ name: Release
 # a pre-release, which isn't "the latest release", so Check for updates
 # doesn't offer it — it's installed by hand, from the release's page.
 #
+# Each release also carries changes.txt: its notes and those of the full
+# releases before it, which Check for updates shows when it offers it.
+#
 # Nothing is published if the tests fail, the two build files disagree on
 # the version, or the downloaded key isn't the car's platform key.
 
@@ -138,7 +141,16 @@ jobs:
             *)   kind="--latest" ;;
           esac
           apk="dist/VibeMediaPlayer-$VERSION-MG4-platform-signed.apk"
-          files="$apk"
+          # What's new, for Check for updates to show: "## <version>" and its
+          # notes, this release's first, then the full releases before it.
+          # (Blank lines left out; if GitHub can't be asked, just this one's.)
+          { printf '## %s\n' "$VERSION"
+            grep -v '^[[:space:]]*$' notes.md || true
+            gh api "repos/$GITHUB_REPOSITORY/releases?per_page=30" --jq \
+              '.[] | select(.prerelease | not) | "## \(.tag_name | ltrimstr("v"))\n\(.body // "" | gsub("\r"; ""))"' \
+              | grep -v '^[[:space:]]*$' || true
+          } > dist/changes.txt
+          files="$apk dist/changes.txt"
           # Versions up to 1.0.16-pre2 ask for the APK by the project's old
           # name when they check for updates.  The first full release since
           # the renaming carries it under both names, so they can get onto

@@ -18,7 +18,7 @@ Other models, regions or firmware versions may not work.
 - Pre-caches the next 10 songs and their covers.
 - Browse albums, artists and genres, plus search as you type.
 - Day and night themes that follow the car's theme.
-- One-tap updates from Settings.
+- Updates from Settings, installed when you say so.
 
 To uninstall, remove the app update.
 

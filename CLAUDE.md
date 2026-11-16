@@ -19,11 +19,14 @@ repository is MintiesJZ/VibeMediaPlayer, and GitHub sends the old address on.
   to `master` carries a versionName that has no release yet: it builds, runs
   the tests, signs with the AOSP test key (downloaded, checked against the
   pinned SHA-256s) and publishes, with the version commit's message as the
-  notes.  Don't publish by hand.  Settings → *Check for updates*
-  (`update/Updater.kt`) installs the latest release, so bump the version only
-  in a commit that's ready to go out.  The GitHub release is the delivery:
-  don't send the APK separately, just say the version is on its way and
-  check that the workflow published it.
+  notes, and `changes.txt` attached: "## <version>" and its notes, this
+  release's then the full releases' before it (from GitHub's API, in the
+  workflow).  Don't publish by hand.  Settings → *Check for updates*
+  (`update/Updater.kt`) offers the latest release (installed if the driver
+  presses Install), so bump the version only in a commit that's ready to go
+  out.  The GitHub release is the delivery: don't send the APK separately,
+  just say the version is on its way and check that the workflow published
+  it.
 - *Check for updates* finds the latest version from where github.com sends
   `…/releases/latest` on to (`…/releases/tag/v<versionName>`) and fetches
   the APK by its name from `…/releases/download/<tag>/`: **the tag and the
@@ -62,7 +65,7 @@ repository is MintiesJZ/VibeMediaPlayer, and GitHub sends the old address on.
 
 `tools/buildcheck` builds the app's sources with the same dependencies as
 `app/build.gradle` and runs the Robolectric tests in `tools/buildcheck/tests`
-(48 service tests, 31 streaming tests, 3 for `LiveDownload`, 21 screenshot tests →
+(50 service tests, 31 streaming tests, 3 for `LiveDownload`, 21 screenshot tests →
 `tools/buildcheck/app/build/shots`, 8 against a real Navidrome, skipped
 unless one is running: `tools/navidrome/README.md`, and 33 with the car's own
 launcher — 7 of them with SmartTube too — skipped unless their APKs are
@@ -213,12 +216,17 @@ are the main thread here.
   hold the username and a token), so any other app is refused, and the log
   says which.  Songs handed out don't say where they're streamed from: the
   player works that out itself (`resolveMediaItem`).
-- **Updating itself**: as a platform-signed system-UID app it holds
-  INSTALL_PACKAGES, so `Updater` installs through a PackageInstaller session
-  with no prompt (if the installer asks for confirmation anyway, its screen
-  is shown).  The system kills the app to replace it; `BootReceiver` gets
-  MY_PACKAGE_REPLACED and reopens the app, and resumes the music if it was
-  playing — only when the updater started the install.
+- **Updating itself**: *Check for updates* only looks; a newer version
+  found is shown with Install / Not now and what's new in it (and in any
+  versions between: the latest release's `changes.txt`,
+  `Updater.changesBetween`; left out if it can't be had), and nothing is
+  downloaded unless Install is pressed (`Updater.check`, `install`,
+  `notNow`; up to 1.0.18 the check installed it straight away).  As a
+  platform-signed system-UID app it holds INSTALL_PACKAGES, so `Updater`
+  installs through a PackageInstaller session with no system prompt (if the
+  installer asks for confirmation anyway, its screen is shown).  The system kills the app to replace it;
+  `BootReceiver` gets MY_PACKAGE_REPLACED and reopens the app, and resumes
+  the music if it was playing — only when the updater started the install.
 - **Quiet while the car starts**: the launcher starts MediaService ~11 s
   after the head unit boots and asks for the music at ~16 s, once the car's
   adapter service (`com.saicmotor.caradapter`) has finished starting.  That

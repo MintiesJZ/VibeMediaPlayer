@@ -26,8 +26,10 @@ import java.net.URL
 
 /**
  * "Check for updates" in Settings: looks at the latest release on GitHub and,
- * if it's newer than this version, downloads its APK and installs it.
- * Only ever runs when that button is pressed.
+ * if it's newer than this version, says so — with what's new in it, from
+ * the changes.txt the Release workflow attaches — and asks
+ * ([Status.Available]).  Only when the driver chooses to install it ([install]) is its APK
+ * downloaded and installed.  Only ever runs when those buttons are pressed.
  *
  * The app shares the system UID and carries the platform signature, so it
  * may install packages itself: the update goes in without a prompt, the app
@@ -60,6 +62,12 @@ object Updater {
         object Idle : Status()
         object Checking : Status()
         data class UpToDate(val version: String) : Status()
+        /**
+         * A newer version is out: install it ([install]) or not ([notNow])?
+         * [changes]: what's new in it and any versions between, newest first
+         * (none if they couldn't be had).
+         */
+        data class Available(val version: String, val changes: List<Change> = emptyList()) : Status()
         data class Downloading(val version: String, val percent: Int) : Status()
         data class Installing(val version: String) : Status()
         /** The head unit's installer is asking for the install to be confirmed. */
@@ -69,24 +77,47 @@ object Updater {
 
     enum class Problem { NETWORK, NO_RELEASE, NO_APK, BAD_FILE, INSTALL }
 
-    data class Release(val version: String, val apkUrl: String)
+    data class Release(val version: String, val apkUrl: String) {
+        /** What's new, attached to the release by the Release workflow. */
+        val changesUrl: String get() = apkUrl.substringBeforeLast('/') + "/changes.txt"
+    }
+
+    /** A version's release notes: its dot points (or lines). */
+    data class Change(val version: String, val notes: List<String>)
 
     private val _status = MutableStateFlow<Status>(Status.Idle)
     val status: StateFlow<Status> = _status.asStateFlow()
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private var job: Job? = null
+    /** The newer version found by the last check, until it's installed or turned down. */
+    @Volatile private var found: Release? = null
 
-    /** Checks GitHub; if there's a newer version, downloads and installs it. */
-    fun checkAndInstall(context: Context) {
+    /** Checks GitHub for a newer version: [Status.Available] if there is one. Nothing's downloaded. */
+    fun check(context: Context) {
         if (job?.isActive == true) return
         val app = context.applicationContext
-        job = scope.launch { run(app) }
+        found = null
+        job = scope.launch { lookFor(installedVersionName(app)) }
     }
 
-    private fun run(context: Context) {
+    /** Downloads and installs the newer version the last check found. */
+    fun install(context: Context) {
+        if (job?.isActive == true) return
+        val release = found ?: return
+        val app = context.applicationContext
+        job = scope.launch { downloadAndInstall(app, release) }
+    }
+
+    /** The newer version found isn't wanted now. */
+    fun notNow() {
+        if (job?.isActive == true) return
+        found = null
+        if (_status.value is Status.Available) _status.value = Status.Idle
+    }
+
+    private fun lookFor(installed: String) {
         _status.value = Status.Checking
-        val installed = installedVersionName(context)
         val release = try {
             fetchLatest()
         } catch (e: FileNotFoundException) {
@@ -103,6 +134,63 @@ object Updater {
             _status.value = Status.UpToDate(installed)
             return
         }
+        found = release
+        _status.value = Status.Available(release.version, changesSince(release, installed))
+    }
+
+    /** What's new in [release] and the versions between it and [installed]. Best effort: none if it can't be had. */
+    private fun changesSince(release: Release, installed: String): List<Change> = try {
+        val conn = open(release.changesUrl)
+        try {
+            if (conn.responseCode !in 200..299) throw IOException("HTTP ${conn.responseCode}")
+            val bytes = java.io.ByteArrayOutputStream()
+            conn.inputStream.use { input ->
+                val buf = ByteArray(8 * 1024)
+                while (bytes.size() < MAX_CHANGES_BYTES) {
+                    val n = input.read(buf, 0, minOf(buf.size, MAX_CHANGES_BYTES - bytes.size()))
+                    if (n < 0) break
+                    bytes.write(buf, 0, n)
+                }
+            }
+            val text = bytes.toString("UTF-8")
+            changesBetween(text, installed, release.version)
+        } finally {
+            conn.disconnect()
+        }
+    } catch (e: Exception) {
+        Log.w(TAG, "No list of what's new with ${release.version} (${e.javaClass.simpleName})")
+        emptyList()
+    }
+
+    /**
+     * From changes.txt ("## <version>" then its notes, newest first): the
+     * full releases newer than [installed], up to [latest] — at most
+     * [MAX_CHANGES] of them.
+     */
+    @VisibleForTesting
+    internal fun changesBetween(text: String, installed: String, latest: String): List<Change> {
+        val all = mutableListOf<Change>()
+        var version: String? = null
+        val notes = mutableListOf<String>()
+        fun done() {
+            version?.let { v -> all += Change(v, notes.toList()) }
+            notes.clear()
+        }
+        for (raw in text.lineSequence()) {
+            val line = raw.trimEnd()
+            if (line.startsWith("## ")) { done(); version = line.removePrefix("## ").trim() }
+            else if (version != null && line.isNotBlank()) notes += line.trim()
+        }
+        done()
+        return all.filter { '-' !in it.version && isNewer(it.version, installed) && !isNewer(it.version, latest) }
+            .distinctBy { it.version }
+            .take(MAX_CHANGES)
+    }
+
+    private const val MAX_CHANGES = 8
+    private const val MAX_CHANGES_BYTES = 64 * 1024
+
+    private fun downloadAndInstall(context: Context, release: Release) {
         val apk = try {
             download(context, release)
         } catch (e: FileNotFoundException) {
@@ -117,6 +205,7 @@ object Updater {
             return fail(Problem.BAD_FILE)
         }
 
+        found = null
         _status.value = Status.Installing(release.version)
         try {
             install(context, apk)

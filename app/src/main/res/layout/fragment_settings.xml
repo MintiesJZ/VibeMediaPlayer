@@ -241,7 +241,8 @@
                 android:textAppearance="@style/Text.Secondary"/>
         </LinearLayout>
 
-        <!-- Updates: only looked for when the button is pressed. -->
+        <!-- Updates: only looked for when the button is pressed; a newer
+             version found is installed only if Install is pressed. -->
         <TextView
             android:id="@+id/updates_heading"
             android:layout_width="wrap_content"
@@ -263,6 +264,22 @@
                 android:layout_width="wrap_content"
                 android:paddingStart="40dp"
                 android:text="@string/update_check"/>
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/install_update"
+                style="@style/PillButton"
+                android:layout_width="wrap_content"
+                android:text="@string/update_install"
+                android:visibility="gone"/>
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/update_not_now"
+                style="@style/PillButton.Quiet"
+                android:layout_width="wrap_content"
+                android:layout_marginStart="@dimen/space_s"
+                android:layout_marginEnd="@dimen/space_l"
+                android:text="@string/update_not_now"
+                android:visibility="gone"/>
 
             <ProgressBar
                 android:id="@+id/update_busy"
@@ -290,6 +307,17 @@
                 android:ellipsize="end"
                 android:textAppearance="@style/Text.Secondary"/>
         </LinearLayout>
+
+        <!-- What's new in the version found, while it's offered. -->
+        <TextView
+            android:id="@+id/update_changes"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="@dimen/space_m"
+            android:paddingStart="20dp"
+            android:lineSpacingExtra="6dp"
+            android:textAppearance="@style/Text.Secondary"
+            android:visibility="gone"/>
 
         <TextView
             android:id="@+id/version"
