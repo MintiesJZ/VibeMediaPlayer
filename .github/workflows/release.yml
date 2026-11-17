@@ -2,13 +2,13 @@ name: Release
 
 # Publishes each new version: when master's versionName (app/build.gradle)
 # has no release yet, this builds the app, runs the tests, signs the APK with
-# the AOSP test platform key (the key the car's firmware is signed with — it
+# the AOSP test platform key (the key the car's firmware is signed with: it
 # is public) and publishes it as release "v<versionName>".  Settings → Check
 # for updates in the app installs the latest release.
 #
 # A versionName with a "-" in it (1.0.16-pre1) is a test build: published as
 # a pre-release, which isn't "the latest release", so Check for updates
-# doesn't offer it — it's installed by hand, from the release's page.
+# doesn't offer it: it's installed by hand, from the release's page.
 #
 # Each release also carries changes.txt: its notes and those of the full
 # releases before it, which Check for updates shows when it offers it.

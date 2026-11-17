@@ -94,7 +94,7 @@ class RealNavidromeTest {
     @After
     fun tearDown() { if (::relay.isInitialized) relay.close() }
 
-    // ── helpers ──────────────────────────────────────────────────────────
+    // Helpers
 
     private fun MediaService.player(): ExoPlayer =
         MediaService::class.java.getDeclaredField("player").apply { isAccessible = true }.get(this) as ExoPlayer
@@ -232,7 +232,7 @@ class RealNavidromeTest {
         }
     }
 
-    // ── tests ────────────────────────────────────────────────────────────
+    // Tests
 
     /** Everything the app reads from the server parses: the lists the car's menus and the screens show. */
     @Test

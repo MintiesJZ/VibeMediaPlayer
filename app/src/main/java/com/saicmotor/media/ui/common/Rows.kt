@@ -165,7 +165,7 @@ class RowsAdapter(
         else onBindViewHolder(holder, position)
     }
 
-    // ── View holders ──────────────────────────────────────────────────────
+    // View holders
 
     private class Simple(view: View) : RecyclerView.ViewHolder(view)
 

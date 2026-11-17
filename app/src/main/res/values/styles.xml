@@ -22,7 +22,7 @@
         <item name="fontFamily">@font/barlow_regular</item>
     </style>
 
-    <!-- ── Type ─────────────────────────────────────────────────────────
+    <!-- Type
          Barlow (from road-sign lettering) for everything; its semi-condensed
          cut for titles so long album names fit. -->
 
@@ -78,7 +78,7 @@
         <item name="android:textSize">24sp</item>
     </style>
 
-    <!-- ── Controls ───────────────────────────────────────────────────── -->
+    <!-- Controls -->
 
     <!-- Top-bar destination (Home, Search, Library) -->
     <style name="TopTab">

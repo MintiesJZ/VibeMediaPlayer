@@ -40,7 +40,7 @@ abstract class RowsPageFragment : Fragment(), RowActions {
 
     /**
      * Keep the song that's playing in view (album and playlist pages): when
-     * the page opens, and each time the next song starts — unless you've
+     * the page opens, and each time the next song starts, unless you've
      * touched the list in the last few seconds.
      */
     protected open val followPlaying: Boolean = false
@@ -125,7 +125,7 @@ abstract class RowsPageFragment : Fragment(), RowActions {
     /** Replaces the rows without reloading (e.g. after starring something). */
     protected fun show(rows: List<Row>) = adapter.submitList(rows)
 
-    // ── Default row actions ───────────────────────────────────────────────
+    // Default row actions
 
     override fun onAlbum(album: SubsonicAlbum)          = navigator.openAlbum(album.id)
     override fun onArtist(artist: SubsonicArtist)       = navigator.openArtist(artist.id)

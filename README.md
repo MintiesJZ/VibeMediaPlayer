@@ -11,7 +11,7 @@ Other models, regions or firmware versions may not work.
 
 ## Features
 
-- Stream from any Subsonic server.
+- Stream from a Navidrome server.
 - Scrobbles plays, and saves them to send later when there's no signal.
 - Works with the stock launcher and all steering wheel controls.
 - Autoplay when the car starts: resume where you left off, shuffle your library, or stay quiet.

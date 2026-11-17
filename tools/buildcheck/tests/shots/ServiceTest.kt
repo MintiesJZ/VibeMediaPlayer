@@ -53,7 +53,7 @@ class ServiceTest {
         SubsonicSettings.save(app, SubsonicSettings.Config("http://127.0.0.1:9", "me", "secret"))
     }
 
-    // ── helpers ──────────────────────────────────────────────────────────
+    // Helpers
 
     private fun service(): MediaService {
         val s = Robolectric.buildService(MediaService::class.java).create().get()
@@ -95,7 +95,7 @@ class ServiceTest {
     /**
      * Where the saved song is carried on from here: it isn't on disk (there's
      * no server in these tests to have had it from), and a song that isn't
-     * starts from its beginning — part-way needs all of it on disk, which
+     * starts from its beginning: part-way needs all of it on disk, which
      * StreamingTest covers (aLongSongLeftEarlyCarriesOnWhereItWas).
      */
     private val FROM_ITS_BEGINNING = 0L
@@ -115,7 +115,7 @@ class ServiceTest {
     private fun key(code: Int, action: Int, downTime: Long, eventTime: Long) =
         KeyEvent(downTime, eventTime, action, code, 0)
 
-    // ── tests ────────────────────────────────────────────────────────────
+    // Tests
 
     @Test
     fun settingsMoveToDeviceStorageOnce() {
@@ -352,6 +352,42 @@ class ServiceTest {
     }
 
     /**
+     * Every text colour is readable on every background it sits on, in both
+     * skins: 4.5:1 or better (WCAG AA for normal text).  The third text
+     * colour was 2.8 to 4.0:1 up to 1.0.19.
+     */
+    @Test
+    fun textIsReadableInBothSkins() {
+        val res = java.io.File(System.getProperty("app.manifest")!!).parentFile.resolve("res")
+        fun colours(dir: String): Map<String, Int> {
+            val doc = javax.xml.parsers.DocumentBuilderFactory.newInstance().newDocumentBuilder()
+                .parse(res.resolve("$dir/colors.xml"))
+            val nodes = doc.getElementsByTagName("color")
+            return (0 until nodes.length).associate { i ->
+                val e = nodes.item(i) as org.w3c.dom.Element
+                e.getAttribute("name") to java.lang.Long.parseLong(e.textContent.trim().removePrefix("#"), 16).toInt()
+            }
+        }
+        fun contrast(fg: Int, bg: Int): Double {
+            fun lum(c: Int): Double {
+                fun ch(v: Int) = (v / 255.0).let { if (it <= 0.03928) it / 12.92 else Math.pow((it + 0.055) / 1.055, 2.4) }
+                return 0.2126 * ch(c shr 16 and 0xFF) + 0.7152 * ch(c shr 8 and 0xFF) + 0.0722 * ch(c and 0xFF)
+            }
+            val (a, b) = listOf(lum(fg), lum(bg)).sortedDescending()
+            return (a + 0.05) / (b + 0.05)
+        }
+        val day = colours("values")
+        for ((skin, colours) in listOf("day" to day, "night" to day + colours("values-night"))) {
+            for (text in listOf("ink", "ink_2", "ink_3", "accent_ink")) for (bg in listOf("bg", "surface", "surface_hi")) {
+                val ratio = contrast(colours.getValue(text), colours.getValue(bg))
+                assertTrue("$skin: $text on $bg is ${"%.2f".format(ratio)}:1", ratio >= 4.5)
+            }
+            val onAccent = contrast(colours.getValue("on_accent"), colours.getValue("accent"))
+            assertTrue("$skin: on_accent on accent is ${"%.2f".format(onAccent)}:1", onAccent >= 4.5)
+        }
+    }
+
+    /**
      * The app is one process.  The launcher's browse services each had
      * their own up to 1.0.16 (as the stock app's do), and the launcher
      * starts two of them as the head unit boots: two more processes
@@ -519,7 +555,7 @@ class ServiceTest {
         assertEquals(androidx.media3.common.C.TIME_UNSET, delay(http(404)))
         assertEquals(androidx.media3.common.C.TIME_UNSET, delay(java.io.IOException("bad file"), 4))
         assertEquals(Int.MAX_VALUE, policy.getMinimumLoadableRetryCount(androidx.media3.common.C.DATA_TYPE_MEDIA))
-        // What the log says about each — in words, never the address (it carries the login).
+        // What the log says about each: in words, never the address (it carries the login).
         val why = com.saicmotor.media.service.WaitForNetworkPolicy.Companion::reason
         assertEquals("the server's name wasn't found — no connection yet?", why(noNetwork))
         assertEquals("the server answered 503", why(http(503)))
@@ -582,7 +618,7 @@ class ServiceTest {
 
     /**
      * The latest version is found from where GitHub's site sends "the latest
-     * release" on to — not from GitHub's API, which only answers 60 times an
+     * release" on to, not from GitHub's API, which only answers 60 times an
      * hour for everyone sharing an address (as on a phone network).
      */
     @Test
@@ -987,7 +1023,7 @@ class ServiceTest {
                             while (!line.isNullOrEmpty()) line = reader.readLine()
                             val out = it.getOutputStream()
                             if (request.contains("/rest/stream")) {
-                                // No Content-Length: the connection closing ends it —
+                                // No Content-Length: the connection closing ends it:
                                 // and it's kept open, the song still on its way.
                                 out.write("HTTP/1.1 200 OK\r\nContent-Type: audio/ogg\r\nConnection: close\r\n\r\n".toByteArray())
                                 out.write(stream, 0, stream.size / 2)
@@ -1267,7 +1303,7 @@ class ServiceTest {
         assertEquals(200_000L, snapshot[0].durationMs)
     }
 
-    // ── Carrying on after stopping unexpectedly ──────────────────────────
+    // Carrying on after stopping unexpectedly
 
     /** Playing, some minutes into a drive (well past start-up). */
     private fun playingMidDrive(): MediaService {
@@ -1331,7 +1367,7 @@ class ServiceTest {
 
     /**
      * The car switched off as the music played, and started again: that's a
-     * start-up, for the launcher and the start-up setting to decide — the
+     * start-up, for the launcher and the start-up setting to decide: the
      * music waits to be asked.
      */
     @Test
@@ -1390,10 +1426,10 @@ class ServiceTest {
         assertEquals(4, fifth.player().currentMediaItemIndex)
     }
 
-    // ── Who may browse ───────────────────────────────────────────────────
+    // Who may browse
 
     /**
-     * Browsing is for the car's own apps — the launcher and the system's
+     * Browsing is for the car's own apps: the launcher and the system's
      * screens, which run as the system user, as this app does: what's
      * handed out carries the Navidrome login (in the cover addresses).  Any
      * other app on the head unit is turned away.  (Anyone was let in.)

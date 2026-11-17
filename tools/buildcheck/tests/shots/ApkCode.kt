@@ -10,7 +10,7 @@ import java.net.URLClassLoader
  * Another app's own code, converted from its APK with dex2jar for this run
  * (see tools/firmware/README.md; it's never in the repo): the SAIC launcher
  * ([launcher]) or SmartTube ([smartTube]).  The classes it [owns] come from
- * the converted jar — its own copies, as in its own process; Android's and
+ * the converted jar: its own copies, as in its own process; Android's and
  * everything else from the test, so it talks to the app's real service.
  */
 class ApkCode private constructor(jar: File, parent: ClassLoader, private val owns: ApkCode.(String) -> Boolean) :

@@ -9,22 +9,17 @@ import com.saicmotor.common.CommandParcelable.Companion.DISABLE
 import com.saicmotor.common.CommandParcelable.Companion.ENABLE
 
 /**
- * Talks to the SAIC launcher's "mode manager", which decides which audio
- * source (radio, media, CarPlay…) plays when the car starts and when the
- * source button is pressed.
+ * Talks to the SAIC launcher's mode manager, which picks the audio source
+ * (radio, media, CarPlay…) at start-up and when the source button is pressed.
  *
- * What the firmware does (from the launcher's ModeManager / ScreenStateMachine):
- *
- *  - At start-up it waits 10 s, then restores the last source.  For the media
- *    app it only does that if the media app has said that source type is
- *    available (`UPDATE_SOURCE_AVAILABLE`).  It retries every 3 s, five
- *    times, then gives up and switches to the radio.  The stock media app
- *    reports a USB stick as available once it's mounted; nobody reported
- *    anything for us, so the car always fell back to the radio.
- *  - To restore media it starts our MediaService with a [CommandParcelable]
- *    (`SWITCH_SOURCE_ONLY_PLAY` or `_PAUSE`), and expects us to play or pause.
- *  - We play as the main music source (car source type 6), which the launcher
- *    records as media type USB1, so USB1 is the type we report as available.
+ *  - At start-up it restores the last source after 10 s, but for media only
+ *    once the media app has reported that source type available
+ *    (`UPDATE_SOURCE_AVAILABLE`); it retries every 3 s, five times, then
+ *    switches to the radio.
+ *  - To restore media it starts MediaService with a [CommandParcelable]
+ *    (`SWITCH_SOURCE_ONLY_PLAY` or `_PAUSE`).
+ *  - We play as car source type 6, which the launcher records as USB1, so USB1
+ *    is the type we report available.
  */
 object SaicModeBridge {
 

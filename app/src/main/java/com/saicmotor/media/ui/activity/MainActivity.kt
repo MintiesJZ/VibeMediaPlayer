@@ -68,7 +68,7 @@ class MainActivity : AppCompatActivity(), Navigator {
         }
     }
 
-    // ── Session connection ────────────────────────────────────────────────
+    // Session connection
 
     private val connectionCallback = object : MediaBrowserCompat.ConnectionCallback() {
         override fun onConnected() {
@@ -97,7 +97,7 @@ class MainActivity : AppCompatActivity(), Navigator {
         }
     }
 
-    // ── Lifecycle ─────────────────────────────────────────────────────────
+    // Lifecycle
 
     override fun onCreate(savedInstanceState: Bundle?) {
         // Before super.onCreate so the first inflation uses the right skin.
@@ -169,7 +169,7 @@ class MainActivity : AppCompatActivity(), Navigator {
         }
     }
 
-    // ── Navigation ────────────────────────────────────────────────────────
+    // Navigation
 
     /** Switches tab, closing any album/artist pages that were open. */
     fun show(dest: Destination) {

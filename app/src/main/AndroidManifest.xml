@@ -32,7 +32,7 @@
         android:supportsRtl="false"
         android:usesCleartextTraffic="true">
 
-        <!-- ════════ Activity ════════ -->
+        <!-- Activity -->
         <activity
             android:name="com.saicmotor.media.ui.activity.MainActivity"
             android:exported="true"
@@ -44,7 +44,7 @@
             </intent-filter>
         </activity>
 
-        <!-- ════════ Main service — MediaBrowserServiceCompat + ExoPlayer ════════
+        <!-- Main service: MediaBrowserServiceCompat + ExoPlayer
              directBootAware: the launcher can reach it (and it can play from
              the song cache) as soon as the head unit boots, ~10 s before the
              user storage unlocks.  Everything it reads is in device-protected
@@ -61,12 +61,12 @@
             </intent-filter>
         </service>
 
-        <!-- ════════ Launcher browse endpoints ════════
+        <!-- Launcher browse endpoints
              The SAIC launcher binds to the stock media app's per-source
              services by these names; each serves the Navidrome library.
              In the app's one process: up to 1.0.16 each had its own (as the
              stock app's do), and the launcher starts two of them as the head
-             unit boots — two more processes to start just as the car's own
+             unit boots: two more processes to start just as the car's own
              services are starting (see CLAUDE.md, "Quiet while the car
              starts"). -->
         <service
@@ -105,7 +105,7 @@
             </intent-filter>
         </service>
 
-        <!-- ════════ Boot receiver ════════ -->
+        <!-- Boot receiver -->
         <receiver
             android:name=".boot.BootReceiver"
             android:directBootAware="true"
@@ -120,12 +120,12 @@
             </intent-filter>
         </receiver>
 
-        <!-- ════════ Update installs (Settings → Check for updates) ════════ -->
+        <!-- Update installs (Settings → Check for updates) -->
         <receiver
             android:name=".update.UpdateStatusReceiver"
             android:exported="false"/>
 
-        <!-- ════════ Widget receivers ════════ -->
+        <!-- Widget receivers -->
         <receiver
             android:name="com.saicmotor.media.widget.MediaWidgetProvider_1x1"
             android:exported="true">

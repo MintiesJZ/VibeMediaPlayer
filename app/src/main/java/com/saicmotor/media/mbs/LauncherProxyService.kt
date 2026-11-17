@@ -39,7 +39,7 @@ abstract class LauncherProxyService : MediaBrowserServiceCompat() {
         }
         override fun onConnectionSuspended() {
             Log.w(TAG, "${javaClass.simpleName}: player went away; restarting")
-            // MediaService is gone — its session token is now stale.  (It's
+            // MediaService is gone: its session token is now stale.  (It's
             // in this process, so this shouldn't happen while we're here.)
             // Start again, so the launcher's next bind gets the new token.
             android.os.Process.killProcess(android.os.Process.myPid())

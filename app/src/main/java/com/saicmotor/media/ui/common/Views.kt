@@ -105,7 +105,7 @@ class LoadStateView @JvmOverloads constructor(
     }
 }
 
-// ── Images ────────────────────────────────────────────────────────────────────
+// Images
 
 fun ImageView.loadCover(url: String?, @DrawableRes placeholder: Int = R.drawable.cover_placeholder) {
     load(url) {
@@ -132,7 +132,7 @@ fun coverCacheKey(url: String?): String? {
 
 private val AUTH_PARAMS = setOf("u", "t", "s", "v", "c", "f", "p")
 
-// ── Formatting ────────────────────────────────────────────────────────────────
+// Formatting
 
 object Format {
     /** 3:07, 1:02:45 */

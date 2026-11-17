@@ -26,8 +26,8 @@ import java.net.URL
 
 /**
  * "Check for updates" in Settings: looks at the latest release on GitHub and,
- * if it's newer than this version, says so — with what's new in it, from
- * the changes.txt the Release workflow attaches — and asks
+ * if it's newer than this version, says so, with what's new in it, from
+ * the changes.txt the Release workflow attaches, and asks
  * ([Status.Available]).  Only when the driver chooses to install it ([install]) is its APK
  * downloaded and installed.  Only ever runs when those buttons are pressed.
  *
@@ -46,7 +46,7 @@ object Updater {
      * The repository's releases.  GitHub sends "…/releases/latest" on to the
      * latest release's own page, …/releases/tag/v<versionName>: that's how
      * the latest version is found.  (GitHub's API says more, but only 60
-     * times an hour for everyone behind the same address — which a phone
+     * times an hour for everyone behind the same address, which a phone
      * network shares between many customers, so the check could fail with
      * the connection fine.)
      */
@@ -164,7 +164,7 @@ object Updater {
 
     /**
      * From changes.txt ("## <version>" then its notes, newest first): the
-     * full releases newer than [installed], up to [latest] — at most
+     * full releases newer than [installed], up to [latest], at most
      * [MAX_CHANGES] of them.
      */
     @VisibleForTesting
@@ -220,7 +220,7 @@ object Updater {
         _status.value = Status.Failed(problem, detail)
     }
 
-    // ── GitHub ─────────────────────────────────────────────────────────────
+    // GitHub
 
     private fun open(url: String, followRedirects: Boolean = true): HttpURLConnection =
         (URL(url).openConnection() as HttpURLConnection).apply {
@@ -346,7 +346,7 @@ object Updater {
         context.packageManager.getPackageInfo(context.packageName, 0).versionName ?: ""
     } catch (_: Exception) { "" }
 
-    // ── Installing ─────────────────────────────────────────────────────────
+    // Installing
 
     private fun install(context: Context, apk: File) {
         val installer = context.packageManager.packageInstaller
@@ -389,7 +389,7 @@ object Updater {
     @VisibleForTesting
     internal fun post(status: Status) { _status.value = status }
 
-    // ── After the update ───────────────────────────────────────────────────
+    // After the update
 
     private const val PREFS          = "update"
     private const val K_AT           = "installing_at"

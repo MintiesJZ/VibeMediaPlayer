@@ -41,7 +41,7 @@ import org.robolectric.annotation.LooperMode
 import java.time.Duration
 import kotlin.math.abs
 
-// ── Sample library (invented names) ──────────────────────────────────────────
+// Sample library (invented names)
 
 object Sample {
     val artistNames = listOf(
@@ -148,7 +148,7 @@ object FakeCovers {
     }
 }
 
-// ── Screenshots ──────────────────────────────────────────────────────────────
+// Screenshots
 
 @RunWith(AndroidJUnit4::class)
 @GraphicsMode(GraphicsMode.Mode.NATIVE)

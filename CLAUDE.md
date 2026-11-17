@@ -1,4 +1,4 @@
-# VibeMediaPlayer — MG4 build
+# VibeMediaPlayer: MG4 build
 
 A fork of lkernan/CarMediaPlayer for the MG4 (SAIC head unit, firmware
 `1100 SWI131 R27 09.08.24`).  It **replaces the stock media app**
@@ -46,7 +46,7 @@ repository is MintiesJZ/VibeMediaPlayer, and GitHub sends the old address on.
   the version itself is released, *Check for updates* on the test build
   installs it (`Updater.isNewer`).
 - The version commit's message is the release's notes (the workflow drops
-  the title line): **short, plain dot points only** — a few words each,
+  the title line): **short, plain dot points only**: a few words each,
   one per change, no explanations (e.g. "- Autoplay when car starts.").
 - Commit to `master`.  Changes are never pushed to lkernan/CarMediaPlayer
   (the upstream project).
@@ -55,7 +55,9 @@ repository is MintiesJZ/VibeMediaPlayer, and GitHub sends the old address on.
   session's address in the history).
 - Bug reports come as a logcat from the car, sometimes with Navidrome server
   logs.  The app logs under tag `CarMedia`; the SAIC launcher logs as
-  `MediaView`, `SwcManager`, `LauncherService`, `HardKeyService`.
+  `MediaView`, `SwcManager`, `LauncherService`, `HardKeyService`.  Keep
+  the wording of the app's log lines as it is (em dashes included): the
+  owner's log tools read them, to hide song titles.
 - The repo is public: never commit logcats, server logs, server addresses,
   usernames, passwords, personal emails, place names or the signing keys.
   Tests and screenshots use made-up data (`music.example.com`, invented
@@ -65,10 +67,10 @@ repository is MintiesJZ/VibeMediaPlayer, and GitHub sends the old address on.
 
 `tools/buildcheck` builds the app's sources with the same dependencies as
 `app/build.gradle` and runs the Robolectric tests in `tools/buildcheck/tests`
-(50 service tests, 31 streaming tests, 3 for `LiveDownload`, 21 screenshot tests →
+(51 service tests, 31 streaming tests, 3 for `LiveDownload`, 21 screenshot tests →
 `tools/buildcheck/app/build/shots`, 8 against a real Navidrome, skipped
 unless one is running: `tools/navidrome/README.md`, and 33 with the car's own
-launcher — 7 of them with SmartTube too — skipped unless their APKs are
+launcher, 7 of them with SmartTube too, skipped unless their APKs are
 given: `tools/firmware/README.md`).
 Needs JDK 17, Gradle 8.x, Android SDK platform 34 + build-tools 34
 (`local.properties` with `sdk.dir=...`).
@@ -126,6 +128,12 @@ for the launcher in manifest order (Robolectric sorts by name): MediaService
 must stay the first service in the manifest.  The other apps' work threads
 are the main thread here.
 
+## Screens
+
+`DESIGN.md` holds the look: the colours and why, the type, sizes for a car
+screen.  Every text colour must stay 4.5:1 or better on its backgrounds in
+both skins (`textIsReadableInBothSkins`).
+
 ## How the car talks to the app (learned from the firmware)
 
 - **Launcher mode commands**: the launcher calls `startService` on
@@ -165,12 +173,12 @@ are the main thread here.
 - **STAR key (17)**: its release is never reported (the system intercepts
   it).  The launcher's SwcManager counts keys held (`mCallPress`) and only
   acts when a release brings the count to 0, resetting it after each
-  release — so the first wheel key after a STAR press is ignored.  The app
+  release, so the first wheel key after a STAR press is ignored.  The app
   mirrors the count (`mirrorLauncherKeyCount`) and, if the launcher hasn't
   acted within 500 ms, does what the launcher would have done
   (`coverIgnoredKey`).  Volume keys are lost the same way: after 300 ms
   with no change to the car's volume, the app turns it itself
-  (`coverIgnoredVolumeKey`, `CarVolume` — the launcher's own call:
+  (`coverIgnoredVolumeKey`, `CarVolume`, the launcher's own call:
   CarAdapterService queryClient(10) → ICarAudioService volumeUp/volumeDown
   with flag 1024, which picks the volume in use and shows the volume bar).
   A held key still works for the launcher; only a short press is lost.
@@ -178,7 +186,7 @@ are the main thread here.
   time, e.g. to leave YouTube.
 - **Wheel keys while YouTube is open**: the launcher keeps sending them to
   us (its source), as "play" for the centre key.  The centre key plays /
-  pauses the app being watched (`wheelTarget` — the app that took the
+  pauses the app being watched (`wheelTarget`: the app that took the
   speakers, playing or paused, until its session goes away when it's
   closed); next / previous / seek do nothing then.  Otherwise the keys are
   the music's.
@@ -199,7 +207,7 @@ are the main thread here.
   YouTube) → paused; for a moment (a call, a navigation prompt) → paused
   and carried on afterwards.  Both go by "meant to be playing"
   (`playWhenReady`), not "playing": a song still loading, or waiting for
-  the network, used to start once it had loaded — over the call, or taking
+  the network, used to start once it had loaded, over the call, or taking
   the speakers back from the radio.  Play pressed while they're away for a
   moment asks for them again (`focusAway`), so the car refuses it during a
   call.
@@ -209,7 +217,7 @@ are the main thread here.
   told when play / pause changes while loading too
   (`onPlayWhenReadyChanged`).
 - **Who may browse** (`mbs/BrowseAccess`): MediaService and the launcher's
-  four browse services answer only the car's own apps — callers running as
+  four browse services answer only the car's own apps: callers running as
   the system user, as the launcher (`com.saicmotor.launcher`), the system's
   screens (`com.android.systemui`), `com.saicmotor.eol` and this app all
   do.  What's handed out carries the Navidrome login (the cover addresses
@@ -226,24 +234,24 @@ are the main thread here.
   installs through a PackageInstaller session with no system prompt (if the
   installer asks for confirmation anyway, its screen is shown).  The system kills the app to replace it;
   `BootReceiver` gets MY_PACKAGE_REPLACED and reopens the app, and resumes
-  the music if it was playing — only when the updater started the install.
+  the music if it was playing, only when the updater started the install.
 - **Quiet while the car starts**: the launcher starts MediaService ~11 s
   after the head unit boots and asks for the music at ~16 s, once the car's
   adapter service (`com.saicmotor.caradapter`) has finished starting.  That
   service hears the car's signals only from the vehicle HAL's one pass over
   them ~15 s after boot (subscribing gets it no value), so if it subscribes
-  a few tenths of a second late it never hears them — among them
+  a few tenths of a second late it never hears them, among them
   `ID_IMCU_VEHICLE_ELECTRIC_RANGE_DSP_CMD` (0x2140a1a5), which colours the
-  launcher's battery diagram: 0 green; anything else — the car's low-range
-  warning (1–3), or -1, "never heard" — orange, for the whole drive
+  launcher's battery diagram: 0 green; anything else (the car's low-range
+  warning, 1–3, or -1, "never heard") orange, for the whole drive
   (`BatterySeekBar.setEH32BatteryProgress`).  So the app does nothing heavy
   until the launcher asks: 1.0 – 1.0.15 got the queue ready as soon as the
   service was started (player, decoder and audio track, 12–15 s after boot),
   the adapter service ran a second late and the launcher asked a second
-  later too — no sooner for the music, and an orange battery most days.
+  later too: no sooner for the music, and an orange battery most days.
   (Since: the adapter service subscribes 14.5–14.9 s after boot, the HAL's
   pass is at 15.0–15.5 s, the launcher asks at ~16 s and the music plays
-  ~1 s after that — nearly all of it first-time work on a busy head unit.)
+  ~1 s after that: nearly all of it first-time work on a busy head unit.)
   Nothing at all is done ahead: 1.0.16-pre2 and -pre3 read the saved
   queue's file meanwhile, on a thread at the lowest priority, and the
   adapter service's margin went from ~0.5 s to ~0.2 s in their four logs
@@ -264,7 +272,7 @@ are the main thread here.
   and the adapter service itself isn't bound (for the volume, `CarVolume`)
   until then, or 25 s after boot.  (1.0.17's one logged start-up: 0.26 s
   to spare, MediaService made in ~0.2 s; the music played 1.8 s after the
-  launcher asked, the slowest logged — 0.8–1.6 s before — of which opening
+  launcher asked, the slowest logged, 0.8–1.6 s before, of which opening
   the cache then accounts for 0.1–0.2 s.)
   In a logcat: `LAU.EvBatteryView: onChargePercentChange: percent: 98,range=-1,…`
   is orange, `range=0` green; `[CarAdapterSettingManager]
@@ -320,7 +328,7 @@ are the main thread here.
   or a weak signal) is taken from that download as it comes in
   (`MediaCache.Follow`, `LiveDownload`): the cache can't be read past what's
   saved until the download's done, and the player used to fetch the song a
-  second time alongside — twice the data on the same signal (a cut-out at
+  second time alongside: twice the data on the same signal (a cut-out at
   the song change) and a piece of the song never kept.  The download carries
   on once its song is playing; if it stops, the player fetches the rest
   itself at once (`DownloadStopped`).  Only the part that may not be saved
@@ -353,7 +361,7 @@ are the main thread here.
   Seeking such a song would restart it too (the Ogg reader finds a place
   by the song's length, and a stream has none), so `KnownDurationExtractor`
   tells the player it can be skipped through, with one way to any place:
-  read it again from the top — from disk, as far as it's kept — and let
+  read it again from the top (from disk, as far as it's kept) and let
   through only what comes from that place on (the stream's two header
   packets, which the reader then hands on as sound, are dropped and their
   time taken off).  Skipping ahead within what the player has read needs
@@ -362,12 +370,12 @@ are the main thread here.
   stops a held key.  Skipping back (or to the start) makes the player stop
   reading and start again from the top; the server's reply it was reading
   is held open meanwhile, for up to 3 s, and carried on with when the
-  player comes back for the rest — which is exactly where the reply had
+  player comes back for the rest, which is exactly where the reply had
   been read to (`MediaCache.Follow.close`; only for the song that's
   playing, `MediaCache.nowPlaying`: a song left for another is hung up on
   at once).  In 1.0.16 each skip back dropped the download and asked the
   server again: ~3 s to get going again on a weak signal.  (Up to
-  1.0.16-pre3 skipping was refused for as long as such a song played — any
+  1.0.16-pre3 skipping was refused for as long as such a song played: any
   song that hadn't been downloaded ahead; in -pre4, until it was all on
   disk.)  A song whose length isn't known at all is still refused
   (`seekWouldRestart`), and so is skipping ahead in a song that hasn't
@@ -387,8 +395,8 @@ are the main thread here.
   (`MediaCache.cutShort` marks it; `precache` drops its length, fetches the
   rest, then notes the server's answer and never asks again).  Until then
   the copy plays as it is.  (1.0.13 dropped the length at once, so the
-  player asked at the song's end every play — a whole song's data each
-  time when the length was simply wrong — and with no signal it waited
+  player asked at the song's end every play (a whole song's data each
+  time when the length was simply wrong) and with no signal it waited
   there for good instead of moving on.)
 - ExoPlayer marks a stream of unknown length "don't cache", so the songs the
   player streamed were never kept; `KeepWhatPlays` clears that, so the song
@@ -402,7 +410,7 @@ are the main thread here.
   car pauses it itself when switched off, and the launcher then asks for
   "paused").  Only the "Don't play anything" setting, or another app
   already playing, keeps it quiet.  If the launcher doesn't ask, the app
-  starts it itself 25 s after BootReceiver's signal — unless the launcher
+  starts it itself 25 s after BootReceiver's signal, unless the launcher
   has been in touch this start-up (it asks what the app can play as it
   starts): then it's bringing back another source, e.g. the radio left
   paused at switch-off, and the app leaves it.
@@ -410,7 +418,7 @@ are the main thread here.
   the music plays: Android starts the service again (START_STICKY, and the
   launcher's connection), and it carries on where it was
   (`carryOnAfterCrash`) instead of coming back silent.  It's told from the
-  car starting — the launcher's and the start-up setting's business — by a
+  car starting (the launcher's and the start-up setting's business) by a
   note kept fresh every 5 s while the music's meant to be playing
   (`notePlaying`, `ResumeStore.Playing`): playing, under two minutes ago, in
   the same run of the head unit (Android's boot count, and the uptime
@@ -431,5 +439,5 @@ are the main thread here.
   it boots (and the server may not be reachable for a while after that):
   the music plays from disk meanwhile and look-ahead downloads are tried
   again; the log says why each one failed (`WaitForNetworkPolicy.reason`,
-  in words — never the error's own message, which can hold the song's
+  in words, never the error's own message, which can hold the song's
   address and so the login).

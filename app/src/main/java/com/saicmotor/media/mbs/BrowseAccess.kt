@@ -8,8 +8,8 @@ import android.os.Process
  *
  * What's handed out carries the Navidrome login: the cover addresses hold
  * the username and a token that works as a login until the password is
- * changed.  So it's for the car's own apps — the launcher and the system's
- * screens, which run as the system user, as this app does — and not for any
+ * changed.  So it's for the car's own apps (the launcher and the system's
+ * screens, which run as the system user, as this app does) and not for any
  * other app on the head unit that asks.
  */
 object BrowseAccess {

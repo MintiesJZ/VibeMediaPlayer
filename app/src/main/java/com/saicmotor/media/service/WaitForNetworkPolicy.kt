@@ -17,20 +17,12 @@ import java.net.UnknownHostException
 /**
  * How the player reacts when a song can't be fetched.
  *
- * ExoPlayer's default gives up after a few quick retries and reports an
- * error, and the app then waited a few more seconds before trying again — so
- * when the car starts and the mobile connection comes up, the
- * song could start many seconds after the server was reachable.
- *
- * Here, when the problem is the connection itself, the player just keeps
- * trying every [NETWORK_RETRY_MS] while showing "buffering", so the song
- * starts within a second or two of the server being reachable.  A server
- * error (5xx: restarting), or the server being at its limit of transcodes
- * (429), is waited out too.  A song the server says doesn't exist, or a login
- * it refuses, is reported straight away (the app skips the song, or shows the
- * login problem).  Anything else — another error message instead of the song,
- * or a song that can't be read — is reported after a few tries, and the app
- * retries or skips it.
+ * No connection, a server error (5xx) or a busy server (429): keep trying every
+ * [NETWORK_RETRY_MS] while showing "buffering", so the song starts within a
+ * second or two of the server being reachable (ExoPlayer's default gives up
+ * after a few quick tries).  A song that doesn't exist, or a refused login:
+ * reported at once.  Anything else (an error instead of the song, a song that
+ * can't be read): reported after a few tries.
  */
 @OptIn(UnstableApi::class)
 class WaitForNetworkPolicy : DefaultLoadErrorHandlingPolicy() {
@@ -53,7 +45,7 @@ class WaitForNetworkPolicy : DefaultLoadErrorHandlingPolicy() {
             // it asks to be tried again in a few seconds.
             httpCode == TOO_MANY_REQUESTS ->
                 if (info.errorCount > MAX_WAIT_RETRIES) C.TIME_UNSET else BUSY_RETRY_MS
-            httpCode != null -> C.TIME_UNSET   // 4xx: missing / not allowed — no point waiting
+            httpCode != null -> C.TIME_UNSET   // 4xx: missing / not allowed, no point waiting
             isConnectionProblem(e) ->
                 if (info.errorCount > MAX_WAIT_RETRIES) C.TIME_UNSET else NETWORK_RETRY_MS
             info.errorCount > OTHER_RETRIES -> C.TIME_UNSET

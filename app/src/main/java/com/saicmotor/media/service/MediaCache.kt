@@ -75,7 +75,7 @@ object MediaCache {
 
     /**
      * Where the player reads songs from: the cache, falling back to the
-     * server — or, for a song the look-ahead is still downloading, to that
+     * server, or, for a song the look-ahead is still downloading, to that
      * download as it comes in (see [Follow]).
      */
     fun dataSourceFactory(context: Context): DataSource.Factory {
@@ -172,17 +172,11 @@ object MediaCache {
     private const val KEY_CHECKED = "cmp_checked"
 
     /**
-     * What's kept of a song ended well short of its listed length: either
-     * the server ended it early without saying so (a transcode that died),
-     * or the listed length is wrong (it's from the song's tags).  Which, only
-     * the server can say: the next time the look-ahead comes to the song, it
-     * asks for the rest (see [precache]) — unless the server's already said
-     * that's all.  Until then it's kept and played as it is.
-     *
-     * (It used to be no longer taken for the whole song straight away: the
-     * player then asked for the rest itself at its end, every time if the
-     * length was simply wrong — a whole song's data each play — and with no
-     * signal it waited there for good instead of moving on.)
+     * Marks what's kept of a song that ended well short of its listed length (a
+     * transcode that died, or the tags' length is wrong).  The look-ahead asks the
+     * server for the rest once, next time it comes to the song ([precache]),
+     * unless the server's already said that's all; until then the copy plays as
+     * it is.
      *
      * False if there's nothing to ask: not all kept, or already asked.
      */
@@ -238,7 +232,7 @@ object MediaCache {
         }
     }
 
-    // ── The player and the look-ahead on the same song ────────────────────
+    // The player and the look-ahead on the same song
 
     /** Songs the look-ahead is downloading, by cache key. */
     private val live = ConcurrentHashMap<String, LiveDownload>()
@@ -254,19 +248,15 @@ object MediaCache {
     fun playerIsFetching(mediaId: String): Boolean = (playerFetching[keyFor(mediaId)]?.get() ?: 0) > 0
 
     /**
-     * The player's way to the server.  For a song the look-ahead is still
-     * downloading (skipped to, or come up on a weak signal), the cache can't
-     * be read past what's on disk until that download's done, and the player
-     * used to fetch the song again alongside it: twice the data on the same
-     * signal (the song stopped to load), and what it read while the download
-     * held the song wasn't kept (a piece missing for next time).  It takes
-     * the song from the download as it comes in instead.
+     * The player's way to the server.  A song the look-ahead is still
+     * downloading is taken from that download as it comes in (the cache can't be
+     * read past what's on disk until it's done, and fetching the song again
+     * alongside doubled the data and lost what the player read).
      *
-     * The player doesn't learn the song's length when the download that
-     * finished it was someone else's, so at the end of what's on disk it
-     * asks for more: past the end of a song whose length is known by then,
-     * that's answered here (nothing more), not by the server (which
-     * transcodes the whole song again to send nothing).
+     * The player may not know the length of a song another download finished, so
+     * it asks for more at the end: past a known length that's answered here
+     * (nothing), not by the server, which would transcode the whole song again to
+     * send nothing.
      */
     private class Follow(private val server: DataSource, private val knownLength: (String) -> Long) : DataSource {
         private var download: LiveDownload? = null
@@ -352,7 +342,7 @@ object MediaCache {
          * Waits before asking the server for a song that isn't the one
          * playing, while the one playing is being skipped through.  The
          * player gets the next song ready ahead of its turn, and drops it
-         * and starts again at every skip within the song that's playing —
+         * and starts again at every skip within the song that's playing:
          * twice a second while a skip key is held.  Asked for at once, that
          * was a request to the server each time, hung up on half a second
          * later: on a weak signal they queued up behind each other (seconds
@@ -416,7 +406,7 @@ object MediaCache {
 
         /**
          * The player stops reading: it's done with the song, or it's been
-         * told to skip to another place in it — which, back or to the start,
+         * told to skip to another place in it, which, back or to the start,
          * means reading the song again from the top, from disk, and then
          * asking for the rest of it from where the disk copy ends.  That is
          * exactly where this reply has been read to, so for the song that's

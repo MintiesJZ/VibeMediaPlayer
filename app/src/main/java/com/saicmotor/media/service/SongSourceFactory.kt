@@ -24,21 +24,14 @@ import androidx.media3.extractor.TrackOutput
 import androidx.media3.extractor.ogg.OggExtractor
 
 /**
- * Builds the player's source for each song, telling it how long the song is
- * (and keeping what it streams, see [KeepWhatPlays]).
+ * Builds the player's source for each song, giving it the song's length (and
+ * keeping what it streams, see [KeepWhatPlays]).
  *
- * A song that isn't downloaded yet streams from Navidrome transcoded, with no
- * length, and the Ogg reader can't work out its duration either.  ExoPlayer
- * takes a stream like that for live radio: if the connection drops (Wi-Fi to
- * mobile data as the car leaves home, a dead spot), it starts loading it again
- * from the start and the song restarts from the beginning.  With the
- * duration known (the server says how long every song is), it carries on
- * from where the connection dropped instead.
- *
- * Knowing the duration also shows when the server ended a song early
- * without saying so (a transcode that died): [onCutShort] is told, with
- * where the song stopped (ms), so that copy isn't kept as the whole song.
- * Called off the main thread.
+ * A song streaming from Navidrome has no length, so ExoPlayer would take it
+ * for live radio and start it over when the connection drops; with the length
+ * (from the song's details) it carries on from where it dropped.  The length
+ * also shows a song the server ended early: [onCutShort] is told where it
+ * stopped (ms), off the main thread.
  */
 @OptIn(UnstableApi::class)
 internal class SongSourceFactory(
@@ -78,8 +71,8 @@ internal class SongSourceFactory(
  *
  * ExoPlayer asks the cache not to keep a stream of unknown length (it takes
  * it for live radio), and a song still streaming from Navidrome is just that:
- * transcoded, with no length.  So a song the look-ahead hadn't downloaded —
- * the first one after a skip or a new album — was never kept, and when the
+ * transcoded, with no length.  So a song the look-ahead hadn't downloaded
+ * (the first one after a skip or a new album) was never kept, and when the
  * car started again it had to come from the server (no signal yet: silence).
  * Navidrome makes the same bytes every time it transcodes a song (only the
  * Ogg serial number differs, which nothing checks), so a song picked up again

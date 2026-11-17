@@ -109,7 +109,7 @@ class NowPlayingFragment : Fragment() {
         _b = null
     }
 
-    // ── Rendering ─────────────────────────────────────────────────────────
+    // Rendering
 
     private fun render(np: NowPlaying?) {
         current = np
@@ -182,7 +182,7 @@ class NowPlayingFragment : Fragment() {
         b.remaining.text = if (duration > 0) "-" + Format.clock(duration - position) else ""
     }
 
-    // ── Cover and colour ──────────────────────────────────────────────────
+    // Cover and colour
 
     private fun loadArt(url: String?) {
         val ctx = requireContext()

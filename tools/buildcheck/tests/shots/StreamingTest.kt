@@ -73,7 +73,7 @@ class StreamingTest {
     @After
     fun tearDown() = server.close()
 
-    // ── helpers ──────────────────────────────────────────────────────────
+    // Helpers
 
     private fun MediaService.player(): ExoPlayer =
         MediaService::class.java.getDeclaredField("player").apply { isAccessible = true }.get(this) as ExoPlayer
@@ -187,13 +187,13 @@ class StreamingTest {
         }
     }
 
-    // ── tests ────────────────────────────────────────────────────────────
+    // Tests
 
     /**
      * Every song is kept as it plays, whether the look-ahead downloaded it or
      * the player streamed it, and none is downloaded twice.  (The player's
-     * songs weren't kept — ExoPlayer doesn't keep a stream of unknown length
-     * — so the look-ahead then downloaded each next song a second time.  And
+     * songs weren't kept (ExoPlayer doesn't keep a stream of unknown length)
+     * so the look-ahead then downloaded each next song a second time.  And
      * where the two overlapped, both fetched the song and a piece went
      * unkept.)
      */
@@ -384,7 +384,7 @@ class StreamingTest {
 
     /**
      * The server refuses the login (the password was changed on it): the car
-     * says so and stays on the song — not skipping through the queue — and
+     * says so and stays on the song (not skipping through the queue) and
      * plays it once the new password is put in Settings.
      */
     @Test
@@ -495,7 +495,7 @@ class StreamingTest {
         s.onDestroy()
     }
 
-    // ── other sounds, pausing, and what's reported ───────────────────────
+    // Other sounds, pausing, and what's reported
 
     private val audio get() = shadowOf(app.getSystemService(android.media.AudioManager::class.java))
 
@@ -768,7 +768,7 @@ class StreamingTest {
             heard.first().second * OggOpus.PACKET_MS in was - 31_000..was - 29_000)
         assertInOrder(heard.map { it.second })
 
-        // The rest still comes, and all of it is kept — in the one reply
+        // The rest still comes, and all of it is kept: in the one reply
         // from the server: skipping back didn't drop the download (the
         // reply is held open while the player reads again from the top).
         drive(s, 120_000, until = { MediaCache.isCached(app, "sub:$id") })
@@ -819,7 +819,7 @@ class StreamingTest {
      * Holding a skip key in a song doesn't ask the server for the next song
      * at every step.  The player gets the next song ready ahead of its turn
      * and starts that over at each skip within the one playing: a request
-     * each time, hung up on half a second later — in the car, on mobile
+     * each time, hung up on half a second later: in the car, on mobile
      * data, they queued up behind each other and the next song took 13 s to
      * start.  It's asked for once the skipping has stopped.
      */
@@ -935,7 +935,7 @@ class StreamingTest {
     /**
      * Navidrome lists a song as longer than it is (the length is from its
      * tags, which can be wrong): the server's asked once whether there's more
-     * — and isn't again — and with no signal the music plays through the song
+     * (and isn't again) and with no signal the music plays through the song
      * and on.  (Taken for a song the server had cut short, it was fetched
      * again from the server at every play, and with no signal the music
      * stopped for good at the song's end.)

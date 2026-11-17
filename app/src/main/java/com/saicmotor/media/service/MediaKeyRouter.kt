@@ -11,21 +11,15 @@ import android.os.SystemClock
 import android.util.Log
 
 /**
- * Keeps track of the other media apps on the head unit (YouTube, the SAIC
- * radio, the phone's Bluetooth session, …) so steering-wheel keys can be
- * handed to them when they, not us, are the app the driver is listening to.
+ * Tracks the other media apps (YouTube, the SAIC radio, the phone's
+ * Bluetooth session…) so steering-wheel keys can go to the one the driver is
+ * listening to.
  *
- * Why this is needed: MediaService marks its session with the hidden
- * FLAG_EXCLUSIVE_GLOBAL_PRIORITY.  That is what makes the steering wheel
- * reach us at all (otherwise the SAIC radio's global-priority session
- * swallows the keys), but it also means *every* media key comes to us, even
- * while YouTube is playing.  The stock radio does exactly that, which is why
- * the wheel can't skip YouTube videos while it's installed.  We take the keys
- * and pass them on to whichever app should really have them.
- *
- * Listing other apps' sessions needs MEDIA_CONTENT_CONTROL, which we hold as
- * a system-UID app.  If that is ever refused, [available] is false and every
- * key is simply handled by us, as before.
+ * MediaService's session has the hidden FLAG_EXCLUSIVE_GLOBAL_PRIORITY, or the
+ * SAIC radio's session would swallow the wheel keys; with it, every media key
+ * comes to us, even while YouTube plays.  Listing other sessions needs
+ * MEDIA_CONTENT_CONTROL (we're system UID); if it's refused, [available] is
+ * false and we handle every key.
  */
 class MediaKeyRouter(private val context: Context) {
 

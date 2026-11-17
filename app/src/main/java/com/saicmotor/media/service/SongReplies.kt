@@ -44,7 +44,7 @@ class SongRefused(val songId: String?, val code: Int, message: String) : IOExcep
  * Song requests to the server, checked before anything is saved.
  *
  * Navidrome answers a song it can't send with an error message (as every
- * Subsonic error comes: HTTP 200, a JSON body) — "song not found", "error
+ * Subsonic error comes: HTTP 200, a JSON body): "song not found", "error
  * transcoding", a login problem.  That message used to go into the song cache
  * as if it were the song, so the song then failed every time it came up (each
  * time after half a minute of silence), even once the server was fine again.

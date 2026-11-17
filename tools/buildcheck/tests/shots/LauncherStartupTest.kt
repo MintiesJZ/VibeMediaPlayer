@@ -50,7 +50,7 @@ import java.util.Collections
 /**
  * The car starting, as the launcher sees it: the SAIC launcher's own start-up
  * code (ScreenStateMachine's "last mode" restore, ModeManager's commands,
- * LastModeManager, SAIC's CommandParcelable — converted from the firmware,
+ * LastModeManager, SAIC's CommandParcelable, converted from the firmware,
  * see tools/firmware/README.md) brings back the last source with the app's
  * real MediaService.  Commands go between them as parcels, so SAIC's class
  * and the app's copy of it must agree, and the launcher finds the app's
@@ -154,7 +154,7 @@ class LauncherStartupTest {
         pm.addResolveInfoForIntent(Intent().setPackage(pkg), infos)
     }
 
-    // ── the launcher ─────────────────────────────────────────────────────
+    // The launcher
 
     /** The launcher's own context: its resource lists (full-screen apps) aren't in this app, so they're empty. */
     private val launcherContext: Context by lazy {
@@ -250,7 +250,7 @@ class LauncherStartupTest {
         else -> null
     }
 
-    // ── between the two (Android's part) ─────────────────────────────────
+    // Between the two (Android's part)
 
     private val ms get() = SystemClock.elapsedRealtime() - bootAt
 
@@ -314,7 +314,7 @@ class LauncherStartupTest {
         }
     }
 
-    // ── the app ──────────────────────────────────────────────────────────
+    // The app
 
     private fun MediaService.player(): ExoPlayer = ApkCode.get(this, "player") as ExoPlayer
     private val playing get() = s?.player()?.playWhenReady == true
@@ -378,7 +378,7 @@ class LauncherStartupTest {
 
     private fun restores() = launcherSent.filter { it.contains(" $SWITCH_PLAY ") || it.contains(" $SWITCH_PAUSE ") || it.contains(" $SWITCH ") }
 
-    // ── tests ────────────────────────────────────────────────────────────
+    // Tests
 
     /** The launcher sends its commands to the first service in the package: it must be MediaService. */
     @Test
@@ -416,7 +416,7 @@ class LauncherStartupTest {
         assertTrue("playing", s!!.player().isPlaying)
     }
 
-    /** "Don't play anything": the music is the source, paused — not the radio. */
+    /** "Don't play anything": the music is the source, paused, not the radio. */
     @Test
     fun dontPlayAnythingStaysQuietButIsTheSource() {
         PlaybackSettings.setStartupMode(app, PlaybackSettings.StartupMode.NOTHING)
@@ -480,7 +480,7 @@ class LauncherStartupTest {
     /**
      * The radio was the source at switch-off, but paused (the car pauses
      * whatever's playing as it's switched off, and the launcher asks for it
-     * paused): the music still stays quiet — the driver chose the radio.
+     * paused): the music still stays quiet: the driver chose the radio.
      */
     @Test
     fun lastOnTheRadioPausedTheMusicStaysQuiet() {

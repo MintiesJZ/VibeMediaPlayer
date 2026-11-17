@@ -9,7 +9,7 @@
     <color name="surface_hi">#FFDDE3E9</color>
     <color name="ink">#FF161B21</color>
     <color name="ink_2">#FF4E5964</color>
-    <color name="ink_3">#FF7D8792</color>
+    <color name="ink_3">#FF5C646D</color>
     <color name="line">#FFD5DBE1</color>
     <color name="placeholder">#FFDCE2E8</color>
     <!-- Dashboard amber: accent fills buttons and indicators (dark text on it);
@@ -17,7 +17,7 @@
     <color name="accent">#FFEE9A1E</color>
     <color name="on_accent">#FF1C1305</color>
     <color name="accent_soft">#33EE9A1E</color>
-    <color name="accent_ink">#FF9A5800</color>
+    <color name="accent_ink">#FF945400</color>
 
     <!-- Now-playing panel (always dark) -->
     <color name="panel_bg">#FF101318</color>

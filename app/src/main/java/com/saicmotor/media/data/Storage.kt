@@ -12,7 +12,7 @@ import kotlin.concurrent.thread
  *
  * The head unit uses file-based encryption.  For the first ~10 s after it
  * boots, the normal (credential-protected) storage is still locked, and
- * Android hides every app that needs it — the car's launcher was ready to
+ * Android hides every app that needs it: the car's launcher was ready to
  * bring the music back 15 s after boot, but couldn't reach this app until
  * the storage unlocked at ~25 s.  (The stock media player and radio wait for
  * it too.)  Device-protected storage is readable straight away, so with the

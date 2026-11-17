@@ -44,7 +44,7 @@ import java.util.Collections
 
 /**
  * The steering wheel as it is in the car: the SAIC launcher's own code (its
- * SwcManager and ModeManager, converted from the head unit's firmware — see
+ * SwcManager and ModeManager, converted from the head unit's firmware, see
  * tools/firmware/README.md) gets the wheel's key reports, decides what they
  * mean and sends the app's session play / pause / skip, or turns the car's
  * volume, exactly as it does on the head unit.  The app gets the same key
@@ -118,7 +118,7 @@ class LauncherWheelTest {
         if (::server.isInitialized) server.close()
     }
 
-    // ── the car ──────────────────────────────────────────────────────────
+    // The car
 
     /**
      * SAIC's car audio service: the volume the launcher (and the app, for a
@@ -230,7 +230,7 @@ class LauncherWheelTest {
         else -> null
     }
 
-    // ── the app ──────────────────────────────────────────────────────────
+    // The app
 
     private fun field(target: Any, name: String): Any? = ApkCode.get(target, name)
 
@@ -285,7 +285,7 @@ class LauncherWheelTest {
         looper.idle()
     }
 
-    // ── the wheel ────────────────────────────────────────────────────────
+    // The wheel
 
     private fun wheel(code: Int, down: Boolean, longPress: Boolean = false) {
         app.sendBroadcast(Intent("com.saic.keyevent.hardkey.report")
@@ -311,7 +311,7 @@ class LauncherWheelTest {
     private val index get() = s.player().currentMediaItemIndex
     private val playing get() = s.player().playWhenReady
 
-    // ── tests ────────────────────────────────────────────────────────────
+    // Tests
 
     @Test
     fun centreKeyPausesAndPlays() {
@@ -545,7 +545,7 @@ class LauncherWheelTest {
         assertTrue(playing)
     }
 
-    // ── the launcher's now-playing tile ──────────────────────────────────
+    // The launcher's now-playing tile
 
     /** What the launcher's tile model passed on to the tile to show: metadata and states, in order. */
     private val tileGot = Collections.synchronizedList(mutableListOf<Any?>())
@@ -631,7 +631,7 @@ class LauncherWheelTest {
         assertFalse("played then paused", playing)
     }
 
-    // ── with SmartTube (the YouTube app used in the car) ──────────────────
+    // With SmartTube (the YouTube app used in the car)
 
     private fun smartTube(): SmartTube {
         val code = smartTubeCode

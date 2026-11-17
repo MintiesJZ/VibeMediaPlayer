@@ -11,7 +11,7 @@ import java.net.URLEncoder
 import java.security.MessageDigest
 import java.util.UUID
 
-// ── Data models ───────────────────────────────────────────────────────────────
+// Data models
 
 data class SubsonicArtist(
     val id:         String,
@@ -71,7 +71,7 @@ class SubsonicException(val kind: Kind, message: String) : IOException(message) 
     enum class Kind { NOT_CONFIGURED, NETWORK, AUTH, SERVER }
 }
 
-// ── Client ────────────────────────────────────────────────────────────────────
+// Client
 
 /**
  * Minimal Subsonic API client (Navidrome speaks this).
@@ -123,7 +123,7 @@ object SubsonicClient {
         cachedAuthParams = ""
     }
 
-    // ── URL builders ─────────────────────────────────────────────────────────
+    // URL builders
 
     fun streamUrl(cfg: SubsonicSettings.Config, songId: String): String =
         "${cfg.url}/rest/stream?id=${enc(songId)}&${authParams(cfg)}"
@@ -131,7 +131,7 @@ object SubsonicClient {
     fun coverArtUrl(cfg: SubsonicSettings.Config, artId: String, size: Int = 300): String =
         "${cfg.url}/rest/getCoverArt?id=${enc(artId)}&size=$size&${authParams(cfg)}"
 
-    // ── API calls (blocking — run on Dispatchers.IO) ─────────────────────────
+    // API calls (blocking: run on Dispatchers.IO)
 
     fun ping(cfg: SubsonicSettings.Config): SubsonicServerInfo {
         val resp = fetch(cfg, "ping")
@@ -162,7 +162,7 @@ object SubsonicClient {
     }
 
     /**
-     * One page of `getAlbumList2`.  [type] is any Subsonic list type —
+     * One page of `getAlbumList2`.  [type] is any Subsonic list type:
      * alphabeticalByName, newest, recent, frequent, random, starred, byGenre …
      * [genre] is required when type is byGenre.
      */
@@ -243,7 +243,7 @@ object SubsonicClient {
             "id" to songId, "submission" to submission.toString(), "time" to timeMs.toString())
     }
 
-    // ── Parsing ───────────────────────────────────────────────────────────────
+    // Parsing
 
     private fun JSONObject.str(key: String): String? = optString(key).takeIf { it.isNotBlank() }
 
@@ -295,7 +295,7 @@ object SubsonicClient {
         return out
     }
 
-    // ── HTTP ──────────────────────────────────────────────────────────────────
+    // HTTP
 
     /**
      * Calls [endpoint] and returns the inner `subsonic-response` object.

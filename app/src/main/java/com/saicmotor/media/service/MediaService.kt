@@ -97,7 +97,7 @@ class MediaService : MediaBrowserServiceCompat() {
 
         const val SUBSONIC_SONG_PREFIX = "sub:"
 
-        // ── Browse nodes ───────────────────────────────────────────────────
+        // Browse nodes
         /** Playable pseudo-item: the whole library, shuffled, endlessly. */
         const val SHUFFLE_ALL_ID = "$ONLINE_ROOT/shuffle"
         const val ARTISTS_ID     = "$ONLINE_ROOT/artists"
@@ -134,7 +134,7 @@ class MediaService : MediaBrowserServiceCompat() {
             Category(GENRES_ID,      "Genres")
         )
 
-        // ── Commands (startService intents: notification, widgets, boot) ───
+        // Commands (startService intents: notification, widgets, boot)
         const val ACTION_PLAY_PAUSE = "com.saicmotor.media.PLAY_PAUSE"
         const val ACTION_PREVIOUS   = "com.saicmotor.media.PREVIOUS"
         const val ACTION_NEXT       = "com.saicmotor.media.NEXT"
@@ -143,7 +143,7 @@ class MediaService : MediaBrowserServiceCompat() {
         /** Sent after Settings → Check for updates replaced the app while it was playing. */
         const val ACTION_RESUME_AFTER_UPDATE = "com.saicmotor.media.RESUME_AFTER_UPDATE"
 
-        // ── Custom actions (TransportControls.sendCustomAction) ────────────
+        // Custom actions (TransportControls.sendCustomAction)
         /** Play the playable children of [EXTRA_PARENT_ID]; optional [EXTRA_SHUFFLE], [EXTRA_START_ID]. */
         const val ACTION_PLAY_ALL     = "com.saicmotor.media.PLAY_ALL"
         /** Sent by the SAIC launcher when a held steering-wheel skip key is let go
@@ -153,7 +153,7 @@ class MediaService : MediaBrowserServiceCompat() {
         const val EXTRA_SHUFFLE   = "shuffle"
         const val EXTRA_START_ID  = "start_id"
 
-        // ── Extra metadata published on the session ───────────────────────
+        // Extra metadata published on the session
         const val METADATA_ALBUM_ID  = "com.saicmotor.media.ALBUM_ID"
         const val METADATA_ARTIST_ID = "com.saicmotor.media.ARTIST_ID"
 
@@ -170,12 +170,12 @@ class MediaService : MediaBrowserServiceCompat() {
         const val CHANNEL_ID      = "media_playback"
 
         // Hidden framework flag (android.media.session.MediaSession#FLAG_EXCLUSIVE_GLOBAL_PRIORITY).
-        // Reserved for system apps — accessible to us because we ship with
+        // Reserved for system apps, accessible to us because we ship with
         // sharedUserId="android.uid.system".  Without this, the SAIC radio
         // app's globally-priority session intercepts steering-wheel media
         // keys before they reach us, and they vanish (radio is inactive).
         // Because it makes *every* media key come to us, keys are passed on
-        // to other apps (YouTube etc.) when they own the speakers — see
+        // to other apps (YouTube etc.) when they own the speakers, see
         // [MediaKeyRouter] and handleMediaKey().
         private const val FLAG_EXCLUSIVE_GLOBAL_PRIORITY = 0x10000
 
@@ -350,7 +350,7 @@ class MediaService : MediaBrowserServiceCompat() {
     private lateinit var pendingScrobbles: PendingScrobbles
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
 
-    // ── Queue bookkeeping ──────────────────────────────────────────────────
+    // Queue bookkeeping
 
     /** What the current ExoPlayer queue is (saved for resume on startup). */
     private var queueKind = ResumeStore.QueueKind.SINGLE
@@ -360,7 +360,7 @@ class MediaService : MediaBrowserServiceCompat() {
     private var streamRetries = 0
     private var snapshotJob: Job? = null
 
-    // ── No network ─────────────────────────────────────────────────────────
+    // No network
 
     /** The server refused the login: shown as such, and tried again now and then. */
     private var loginRefused = false
@@ -369,7 +369,7 @@ class MediaService : MediaBrowserServiceCompat() {
     private var networkWait = false
     private var networkWaitJob: Job? = null
 
-    // ── Pre-caching ────────────────────────────────────────────────────────
+    // Pre-caching
 
     private var downloader: Job? = null
     @Volatile private var precacheWriter: CacheWriter? = null
@@ -378,7 +378,7 @@ class MediaService : MediaBrowserServiceCompat() {
     private val precached = HashSet<String>()
     private val prefetchedCovers = HashSet<String>()
 
-    // ── Fast forward / rewind (held skip keys) ─────────────────────────────
+    // Fast forward / rewind (held skip keys)
 
     private var fastSeekJob: Job? = null
     /** Skip keys pressed but not yet released: the job that turns them into a hold. */
@@ -391,14 +391,14 @@ class MediaService : MediaBrowserServiceCompat() {
     private var sessionArt: Bitmap? = null
     private var sessionArtJob: Job? = null
 
-    // ── Play reporting (scrobbling) ────────────────────────────────────────
+    // Play reporting (scrobbling)
 
     private var playStartedAt = 0L
     private var playReported  = false
     /** The song Navidrome was last told is "now playing". */
     private var nowPlayingSentFor: String? = null
 
-    // ── Startup ────────────────────────────────────────────────────────────
+    // Startup
 
     /** The start-up restore has been decided (by the launcher, or by us). */
     private var startupHandled = false
@@ -422,12 +422,12 @@ class MediaService : MediaBrowserServiceCompat() {
     /** Music was started for the driver (launcher or boot fallback), not by a press. */
     private var traceAuto       = false
 
-    // ── Steering-wheel keys ────────────────────────────────────────────────
+    // Steering-wheel keys
 
     /** Where each key's DOWN was sent, so its UP goes to the same place. */
     private val keyTargets = mutableMapOf<Int, MediaController>()
 
-    // ── Volume changes (the launcher's "play" on every volume press) ──────
+    // Volume changes (the launcher's "play" on every volume press)
 
     /** Last time a volume key was pressed or the car's volume changed (elapsedRealtime). */
     private var lastVolumeChangeAt = -1L
@@ -452,7 +452,7 @@ class MediaService : MediaBrowserServiceCompat() {
      * only acts on a key if letting go of it brings that count back to 0,
      * and it starts counting afresh after every release.  The STAR key's
      * release is never reported (the system keeps it), so after a STAR press
-     * the launcher ignores the next key — then we do what it would have done.
+     * the launcher ignores the next key, then we do what it would have done.
      * (A held key still works for it: only a short press is lost.)
      */
     private var launcherKeysHeld = 0
@@ -564,7 +564,7 @@ class MediaService : MediaBrowserServiceCompat() {
 
     /**
      * Another app the steering wheel should control instead of us: the one
-     * the driver is watching (YouTube) — playing, or paused but still open.
+     * the driver is watching (YouTube): playing, or paused but still open.
      * Null when it's our music (including once that app has been closed).
      */
     internal interface OtherPlayer {
@@ -600,7 +600,7 @@ class MediaService : MediaBrowserServiceCompat() {
         }
     }
 
-    /** The car's volume settings (android.car.VOLUME_GROUP/n) — catches volume changes from anywhere. */
+    /** The car's volume settings (android.car.VOLUME_GROUP/n): catches volume changes from anywhere. */
     private val volumeObserver = object : ContentObserver(Handler(Looper.getMainLooper())) {
         override fun onChange(selfChange: Boolean) {
             lastVolumeChangeAt = SystemClock.elapsedRealtime()
@@ -611,7 +611,7 @@ class MediaService : MediaBrowserServiceCompat() {
     // Audio focus.  We hold focus while playing so that the SAIC launcher's
     // OnAudioSourceChangeCallBack sees us as the active media source and
     // binds its title-bar UI to our MediaSession.  The focus request carries
-    // a Bundle with key_car_source_type — the value the launcher reads to
+    // a Bundle with key_car_source_type: the value the launcher reads to
     // decide which of its internal MediaController references to bind to.
     private var mediaFocusRequest: AudioFocusRequest? = null
 
@@ -653,7 +653,7 @@ class MediaService : MediaBrowserServiceCompat() {
                 }
             }
             AudioManager.AUDIOFOCUS_LOSS -> {
-                // Permanent loss — another app (e.g. SAIC radio, YouTube) took
+                // Permanent loss: another app (e.g. SAIC radio, YouTube) took
                 // the speakers.  Pause and clear our focus bookkeeping so the
                 // next user-initiated play() re-requests focus instead of
                 // short-circuiting on a stale request.  We never resume on our
@@ -677,7 +677,7 @@ class MediaService : MediaBrowserServiceCompat() {
      * SAIC-custom Bundle that identifies our carSourceType.
      *
      * `AudioAttributes.Builder.addBundle(Bundle)` is `@hide` in stock AOSP
-     * but exposed in SAIC's customised framework — we reach it via reflection.
+     * but exposed in SAIC's customised framework; we reach it via reflection.
      * Our app runs as system UID (sharedUserId="android.uid.system") so the
      * call succeeds.  If the method ever disappears focus still works; the
      * launcher just won't switch its tile to us.
@@ -692,13 +692,13 @@ class MediaService : MediaBrowserServiceCompat() {
                 .getDeclaredMethod("addBundle", Bundle::class.java)
                 .invoke(builder, bundle)
         } catch (_: Throwable) {
-            // SAIC hidden API not present — carry on without the bundle.
+            // SAIC hidden API not present: carry on without the bundle.
         }
         return builder.build()
     }
 
     private fun requestMediaFocus(): Boolean {
-        // Still ours — unless they're away for a moment (a call, a prompt):
+        // Still ours, unless they're away for a moment (a call, a prompt):
         // then ask again, so play pressed during a call is refused by the
         // car rather than played over it.
         if (mediaFocusRequest != null && !focusAway) return true
@@ -733,7 +733,7 @@ class MediaService : MediaBrowserServiceCompat() {
         Log.i(KEY_TAG, "Claimed steering-wheel keys ($why); user=${android.os.Process.myUserHandle()} pid=${android.os.Process.myPid()}")
     }
 
-    // ── Lifecycle ──────────────────────────────────────────────────────────
+    // Lifecycle
 
     override fun onCreate() {
         super.onCreate()
@@ -834,7 +834,7 @@ class MediaService : MediaBrowserServiceCompat() {
     }
 
 
-    // ── Carrying on after stopping unexpectedly ────────────────────────────
+    // Carrying on after stopping unexpectedly
 
     /** Which run of the head unit this is (Android counts its boots). */
     private fun bootCount(): Int =
@@ -873,19 +873,14 @@ class MediaService : MediaBrowserServiceCompat() {
     }
 
     /**
-     * The app stopped unexpectedly while the music was playing (a crash, or
-     * Android short of memory) and has been started again: carry on where it
-     * was.  (It used to come back silent, until play was pressed.)
+     * Started again after stopping unexpectedly (a crash, or Android short of
+     * memory) while the music played: carry on where it was.
      *
-     * It's told from the car starting — where what plays is the start-up
-     * setting's and the launcher's business — by the note [notePlaying]
-     * keeps: playing, moments ago, in this same run of the head unit (same
-     * boot count, and its uptime hasn't gone back) and this version of the
-     * app (after an update, the updater carries on: BootReceiver).  A stop
-     * that's meant (onDestroy) takes the note away.
-     *
-     * If it stops again soon after, the song may be why: the second time the
-     * next song is played instead, and after that it's left paused.
+     * Told from the car starting by the note [notePlaying] keeps: playing,
+     * moments ago, in this run of the head unit (same boot count, uptime not gone
+     * back) and this version (after an update, BootReceiver carries on).
+     * onDestroy takes the note away.  Stopping again soon after: the next song is
+     * played the second time, then it's left paused.
      */
     private fun carryOnAfterCrash(): Boolean {
         val note = resumeStore.loadPlaying() ?: return false
@@ -952,7 +947,7 @@ class MediaService : MediaBrowserServiceCompat() {
                 if (player.mediaItemCount > 0) userPlay()
                 else launchRestore(PlaybackSettings.StartupMode.RESUME, resumeStore.load(), play = true)
             }
-            // Notification and widget buttons — always act on our player.
+            // Notification and widget buttons: always act on our player.
             ACTION_PLAY_PAUSE -> { cancelStartupAction(); togglePlayPause() }
             ACTION_PREVIOUS   -> { cancelStartupIfQueueLoaded(); skipToPrevious() }
             ACTION_NEXT       -> { cancelStartupIfQueueLoaded(); skipToNext() }
@@ -1001,7 +996,7 @@ class MediaService : MediaBrowserServiceCompat() {
         }
     }
 
-    // ── Player listener → keep the session in sync ─────────────────────────
+    // Player listener → keep the session in sync
 
     private val playerListener = object : Player.Listener {
         override fun onIsPlayingChanged(isPlaying: Boolean) {
@@ -1093,8 +1088,8 @@ class MediaService : MediaBrowserServiceCompat() {
      *
      * Carrying on part-way through a song needs all of it on disk: one
      * that isn't starts from its beginning, as soon as it comes.  (A place
-     * in a song that's streaming is found by reading it from the top — see
-     * [KnownDurationExtractor] — so it would wait in silence for all the
+     * in a song that's streaming is found by reading it from the top (see
+     * [KnownDurationExtractor]) so it would wait in silence for all the
      * song before that place to come down, a long while on a weak signal.)
      */
     private fun loadFirst(item: MediaItem, positionMs: Long) {
@@ -1132,7 +1127,7 @@ class MediaService : MediaBrowserServiceCompat() {
         saveSnapshotSoon()
     }
 
-    // ── Errors and lost network ────────────────────────────────────────────
+    // Errors and lost network
 
     /** True if the song failed because the server couldn't be reached (not because it's bad). */
     private fun isNetworkError(error: PlaybackException): Boolean {
@@ -1161,7 +1156,7 @@ class MediaService : MediaBrowserServiceCompat() {
     /**
      * The network is down (tunnel, car park, the modem still starting up after
      * the car is switched on).  Keep the song and keep trying every few
-     * seconds — showing "buffering", not an error — instead of skipping
+     * seconds (showing "buffering", not an error) instead of skipping
      * through songs that can't load either.  We keep the speakers meanwhile,
      * so the car doesn't swap to the radio.
      */
@@ -1268,7 +1263,7 @@ class MediaService : MediaBrowserServiceCompat() {
         }
     }
 
-    // ── Session state ──────────────────────────────────────────────────────
+    // Session state
 
     private fun buildPlaybackState(): PlaybackStateCompat {
         val loading = isLoading()
@@ -1410,7 +1405,7 @@ class MediaService : MediaBrowserServiceCompat() {
         })
     }
 
-    // ── Transport (shared by the session, keys, notification and widgets) ──
+    // Transport (shared by the session, keys, notification and widgets)
 
     private fun userPlay() {
         // Nothing loaded (e.g. first press after the car starts): pick up
@@ -1563,7 +1558,7 @@ class MediaService : MediaBrowserServiceCompat() {
     /**
      * True if a "play" from another app should be ignored because something
      * else is playing.  The SAIC launcher sends our session "play" whenever the
-     * volume is changed while we're paused — even while YouTube is playing —
+     * volume is changed while we're paused, even while YouTube is playing,
      * which is what made the stock radio barge in.
      */
     private fun externalPlayBlocked(caller: String): Boolean {
@@ -1574,7 +1569,7 @@ class MediaService : MediaBrowserServiceCompat() {
         return blocked
     }
 
-    // ── Steering-wheel keys ────────────────────────────────────────────────
+    // Steering-wheel keys
 
     /** True while we're the app the driver is listening to (or just paused). */
     private fun weOwnPlayback(): Boolean =
@@ -1595,8 +1590,8 @@ class MediaService : MediaBrowserServiceCompat() {
 
     /**
      * Handles a media key from the steering wheel (or any other hardware
-     * button).  If another app owns the speakers — YouTube, the radio, the
-     * phone's own Bluetooth player — the key is passed to it untouched, so we
+     * button).  If another app owns the speakers (YouTube, the radio, the
+     * phone's own Bluetooth player) the key is passed to it untouched, so we
      * never get in its way.  Otherwise we act on it directly, on key-down,
      * without the double-tap delay MediaSessionCompat adds to play/pause.
      */
@@ -1618,7 +1613,7 @@ class MediaService : MediaBrowserServiceCompat() {
             if (delivered) return true
             keyTargets.remove(code)
             if (event.action != KeyEvent.ACTION_DOWN) return true
-            // The other app has gone away — fall through and handle it ourselves.
+            // The other app has gone away: fall through and handle it ourselves.
         }
 
         // Skip keys: a press skips, a hold fast-forwards / rewinds.
@@ -1689,7 +1684,7 @@ class MediaService : MediaBrowserServiceCompat() {
         }
     }
 
-    // ── MediaSessionCompat.Callback ────────────────────────────────────────
+    // MediaSessionCompat.Callback
 
     private inner class SessionCallback : MediaSessionCompat.Callback() {
         fun caller(): String =
@@ -1723,7 +1718,7 @@ class MediaService : MediaBrowserServiceCompat() {
                 return
             }
             // While we're paused the SAIC launcher sends "play" for the wheel's
-            // centre key — even while YouTube is playing — and for every volume
+            // centre key, even while YouTube is playing, and for every volume
             // change.  Centre key → play / pause the app being watched, if
             // there is one, else play; volume change → stay paused.  The
             // centre key is acted on at once: the launcher picks play or pause
@@ -1790,7 +1785,7 @@ class MediaService : MediaBrowserServiceCompat() {
             stopFastSeek()
             player.stop()
         }
-        /** A wheel key for the app being watched (YouTube) — skips and seeks leave our queue alone. */
+        /** A wheel key for the app being watched (YouTube): skips and seeks leave our queue alone. */
         private fun forOtherApp(): Boolean {
             if (caller() == packageName) return false
             val other = wheelTarget() ?: return false
@@ -1873,7 +1868,7 @@ class MediaService : MediaBrowserServiceCompat() {
         return true
     }
 
-    // ── Play reporting ─────────────────────────────────────────────────────
+    // Play reporting
 
     /** A new song started: tell Navidrome it's "now playing". */
     private fun startPlayReport(item: MediaItem?) {
@@ -1891,7 +1886,7 @@ class MediaService : MediaBrowserServiceCompat() {
         positionMs >= durationMs / 2 || positionMs >= SCROBBLE_AFTER_MS
 
     /**
-     * Tells Navidrome what's playing — once the song is really playing, so
+     * Tells Navidrome what's playing, once the song is really playing, so
      * not while the queue is put back (paused) at start-up, before the
      * network is up.
      */
@@ -1941,7 +1936,7 @@ class MediaService : MediaBrowserServiceCompat() {
         }
     }
 
-    // ── Look-ahead: download the next songs and covers ─────────────────────
+    // Look-ahead: download the next songs and covers
 
     /** The next [count] songs in play order after the current one. */
     private fun upcomingItems(count: Int): List<MediaItem> {
@@ -1968,26 +1963,19 @@ class MediaService : MediaBrowserServiceCompat() {
     }
 
     /**
-     * Keeps the next [PRECACHE_SONGS] songs downloaded into the song cache,
-     * one at a time, so the next song — or a run of skips — starts straight
-     * away.  Runs for as long as the service does, rather than restarting at
-     * every song change: when you skip a lot, a restart each time meant the
-     * downloads hardly ever got going.
+     * Keeps the next [PRECACHE_SONGS] songs downloaded, one at a time, so the
+     * next song or a run of skips starts straight away.  One loop for the
+     * service's life, so skipping doesn't keep restarting it.
      *
-     *  - Only while playing (not while paused, or before the launcher asks).
-     *  - A new download waits while the song playing is short of data, so it
-     *    gets the connection first (one already going carries on: carrying on
-     *    later would fetch its first part again, as Navidrome starts a
-     *    transcoded song over for every request).
-     *  - A download stops if its song is no longer coming up or playing (you
-     *    jumped elsewhere).  A song that comes up while it's still
-     *    downloading (a skip, or a weak signal) carries on downloading: the
-     *    player takes it from the download as it comes in (see MediaCache),
-     *    rather than fetching it a second time alongside.
-     *  - A song the player's already fetching itself (the next one, once the
-     *    one playing is all in) is left to the player.
-     *  - If the network drops, it tries again every few seconds until it's
-     *    back.  A song the server refuses is given up on after a few tries.
+     *  - Only while playing.
+     *  - A new download waits while the song playing is short of data; one
+     *    already going carries on (Navidrome starts a transcode over for every
+     *    request).
+     *  - A download stops when its song is no longer coming up.  If its song comes
+     *    up, the player takes it from the download (see MediaCache); a song the
+     *    player is already fetching is left to the player.
+     *  - No network: tried again every few seconds.  A song the server refuses is
+     *    given up after a few tries.
      */
     private fun startDownloader() {
         downloader = serviceScope.launch {
@@ -2056,7 +2044,7 @@ class MediaService : MediaBrowserServiceCompat() {
      * A song ended well short of its listed length: the server cut it short
      * (a transcode that died), or the listed length is wrong.  The look-ahead
      * asks the server for the rest the next time it comes to the song (see
-     * MediaCache.cutShort) — it used to stop short at the same place every
+     * MediaCache.cutShort): it used to stop short at the same place every
      * time it came up.  Called off the main thread (see SongSourceFactory).
      */
     private fun songCutShort(item: MediaItem, endedMs: Long) {
@@ -2110,7 +2098,7 @@ class MediaService : MediaBrowserServiceCompat() {
         }
     }
 
-    // ── Queue management ───────────────────────────────────────────────────
+    // Queue management
 
     private fun playFromMediaId(mediaId: String, extras: Bundle?) {
         if (mediaId == SHUFFLE_ALL_ID) {
@@ -2192,8 +2180,8 @@ class MediaService : MediaBrowserServiceCompat() {
         // The song to play goes in on its own and the player's told to load
         // it at once, on its own threads; the rest of the queue is put
         // around it, and everything else here done, while it loads.  (When
-        // the car starts every step takes its time on the head unit — a
-        // couple of hundred songs alone are a few tenths of a second — and
+        // the car starts every step takes its time on the head unit (a
+        // couple of hundred songs alone are a few tenths of a second) and
         // the music was waiting for all of them.)
         settingQueue = true
         try {
@@ -2301,12 +2289,12 @@ class MediaService : MediaBrowserServiceCompat() {
         }
     }
 
-    // ── Library shuffle ────────────────────────────────────────────────────
+    // Library shuffle
 
     /**
      * Plays the whole library in random order, dealt in random batches that
      * are topped up as they run low, so it never ends.  [first] is played
-     * first (from [firstPositionMs]) — used when resuming a library shuffle.
+     * first (from [firstPositionMs]): used when resuming a library shuffle.
      *
      * Returns false if the server couldn't be reached, so callers can retry.
      */
@@ -2364,7 +2352,7 @@ class MediaService : MediaBrowserServiceCompat() {
         }
     }
 
-    // ── Start-up, and the launcher's source switching ──────────────────────
+    // Start-up, and the launcher's source switching
 
     private enum class Restore { PLAYED, NOT_READY, GONE }
 
@@ -2430,7 +2418,7 @@ class MediaService : MediaBrowserServiceCompat() {
 
     /**
      * The launcher wants us as the source, paused.  At start-up that means it
-     * last saw us paused — but the head unit can pause music as it powers
+     * last saw us paused, but the head unit can pause music as it powers
      * down, so if we were playing right up to then, carry on playing.
      */
     private fun launcherPause() {
@@ -2451,7 +2439,7 @@ class MediaService : MediaBrowserServiceCompat() {
 
     /**
      * Sent by BootReceiver.  Normally the launcher asks for us (above); if it
-     * hasn't within [BOOT_FALLBACK_MS], start the music ourselves — but
+     * hasn't within [BOOT_FALLBACK_MS], start the music ourselves, but
      * never over another app that's already playing, nor when the launcher's
      * been in touch this start-up: then it's bringing back another source
      * (the radio, say, paused as the car left it), which the driver chose.
@@ -2490,7 +2478,7 @@ class MediaService : MediaBrowserServiceCompat() {
 
     /**
      * Play pressed with nothing loaded (e.g. the first press after the car
-     * starts): resume the saved queue — or shuffle the library, if that's the
+     * starts): resume the saved queue, or shuffle the library, if that's the
      * startup setting or there's nothing to resume.
      */
     private fun restoreOnPlay() {
@@ -2617,7 +2605,7 @@ class MediaService : MediaBrowserServiceCompat() {
         }
     }
 
-    // ── Start-up timing ────────────────────────────────────────────────────
+    // Start-up timing
 
     private fun startTrace(from: Long) {
         traceFrom       = from
@@ -2679,7 +2667,7 @@ class MediaService : MediaBrowserServiceCompat() {
         if (player.mediaItemCount > 0) cancelStartupAction()
     }
 
-    /** The driver did something — they're in charge now, so drop any pending startup action. */
+    /** The driver did something: they're in charge now, so drop any pending startup action. */
     private fun cancelStartupAction() {
         val job = startupJob ?: return
         if (job.isActive) {
@@ -2691,7 +2679,7 @@ class MediaService : MediaBrowserServiceCompat() {
 
     /**
      * True if another app is playing.  [ignoreSaic]: don't count the car's own
-     * sources (radio…) — when the launcher asks for us, it has already
+     * sources (radio…): when the launcher asks for us, it has already
      * switched those off, and their sessions can still say "playing".
      */
     private fun otherAppIsPlaying(ignoreSaic: Boolean = false): Boolean {
@@ -2791,7 +2779,7 @@ class MediaService : MediaBrowserServiceCompat() {
             .build()
     }
 
-    // ── MediaBrowserServiceCompat — browsing contract ──────────────────────
+    // MediaBrowserServiceCompat: browsing contract
 
     override fun onGetRoot(clientPackageName: String, clientUid: Int, rootHints: Bundle?): BrowserRoot? {
         if (!BrowseAccess.allowed(clientUid)) {
@@ -2914,7 +2902,7 @@ class MediaService : MediaBrowserServiceCompat() {
     private fun subsonicCfg(): SubsonicSettings.Config? =
         SubsonicSettings.load(this).takeIf { it.isValid }
 
-    // ── Widgets & notification ─────────────────────────────────────────────
+    // Widgets & notification
 
     private fun pushWidgets() {
         val meta = player.mediaMetadata

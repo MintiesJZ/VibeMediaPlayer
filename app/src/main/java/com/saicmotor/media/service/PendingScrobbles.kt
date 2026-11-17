@@ -7,7 +7,7 @@ import org.json.JSONObject
 
 /**
  * Plays that couldn't be reported to Navidrome (no signal at the time), kept
- * — across restarts — until the server can be reached, then sent with the
+ * (across restarts) until the server can be reached, then sent with the
  * time they were played.
  */
 class PendingScrobbles(private val context: Context) {

@@ -7,27 +7,14 @@ import org.json.JSONObject
 import java.io.File
 
 /**
- * Persists just enough about the play queue to rebuild it after the head
- * unit reboots, without storing the queue itself:
+ * Saves enough to rebuild the queue after the head unit restarts: the
+ * browse node it came from (or "library shuffle", rebuilt as a fresh
+ * shuffle), the song and position, and the upcoming songs ([saveSnapshot])
+ * so the queue is back before the mobile connection is up.
  *
- *  - a queue started from a browse list (album, playlist, artist's tracks…)
- *    is saved as the browse node it came from, and rebuilt by loading that
- *    node again;
- *  - a whole-library shuffle is saved as "library shuffle" and rebuilt with a
- *    fresh shuffle, starting with the track that was playing;
- *  - plus the current track and position.
- *
- * The upcoming songs themselves are also saved ([saveSnapshot]), so the
- * queue can be put back the moment the car starts — before the mobile
- * connection is up — and playback starts as soon as the song can be fetched
- * (straight away, if it's in the song cache).
- *
- * Car shutdown is just power loss, so there is no "on shutdown" hook: the
- * position is written every few seconds while playing.
- *
- * So is a note that the music is playing ([Playing]): if the app stops
- * unexpectedly and Android starts it again, that note is what tells it to
- * carry on (see MediaService.carryOnAfterCrash).
+ * Switching the car off is just power loss, so the position is written every
+ * few seconds while playing, as is a note that the music is playing
+ * ([Playing], read by MediaService.carryOnAfterCrash).
  */
 class ResumeStore(private val context: Context) {
 

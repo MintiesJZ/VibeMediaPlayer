@@ -102,7 +102,7 @@ class FakeNavidrome : AutoCloseable {
 
     override fun close() = goDown()
 
-    // ── HTTP ────────────────────────────────────────────────────────────
+    // HTTP
 
     private fun bind(port: Int): ServerSocket {
         val s = ServerSocket()
