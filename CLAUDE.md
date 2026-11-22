@@ -280,11 +280,15 @@ both skins (`textIsReadableInBothSkins`).
 
 ## Navidrome
 
-- Navidrome identifies a "player" by client name + User-Agent and sets
-  transcoding per player (this app shows up as "CarMediaPlayer [Dalvik/Android]":
-  the project's old name, kept as the client name for that reason).
-  **Don't set a custom User-Agent** on stream requests: it creates a new
-  player with no transcoding (FLAC).  Cache key is `song-v2:<id>` for that reason.
+- Navidrome identifies a "player" by client name + User-Agent and sends
+  songs in the transcoding set for that player in Navidrome.  The app never
+  asks for a format or bitrate: that's the server owner's to set.  This app
+  shows up as "VibeMediaPlayer [Dalvik/Android]" (up to 1.0.20
+  "CarMediaPlayer", the upstream project's name, so 1.0.21 is a new player
+  with no transcoding until the owner sets one: until then it's sent the
+  original files).  **Don't set a custom User-Agent** on stream requests:
+  API and song requests must stay the same player.  Cache key is
+  `song-v2:<id>`.
 - Transcoded streams have no Content-Length and don't support ranges: every
   request transcodes from the start.  A song played again comes from
   Navidrome's transcoding cache (100 MB by default) with its length, and

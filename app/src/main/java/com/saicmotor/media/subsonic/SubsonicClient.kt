@@ -85,12 +85,13 @@ object SubsonicClient {
     private const val TAG         = "CarMedia.Subsonic"
     private const val API_VERSION = "1.16.1"
     /**
-     * The project's old name, kept: Navidrome knows the car's "player" by
-     * this name (and the User-Agent), and its transcoding is set per
-     * player.  Under another name the car would be a new player with no
-     * transcoding, sent the original files.
+     * How Navidrome knows the car: its "player" is this name plus the
+     * User-Agent's (Android's own, "Dalvik/Android").  What songs are sent
+     * in is the transcoding set for that player in Navidrome: the app never
+     * asks for a format or bitrate.  Up to 1.0.20 the app went by
+     * "CarMediaPlayer", like the project it came from.
      */
-    private const val CLIENT_NAME = "CarMediaPlayer"
+    private const val CLIENT_NAME = "VibeMediaPlayer"
 
     /** getAlbumList2 returns at most 500 per call; we page past that. */
     private const val ALBUM_PAGE_SIZE = 500

@@ -2,7 +2,8 @@
 
 These scripts build Navidrome from source, fill it with made-up music (invented
 artists and albums, made with ffmpeg) and set it up like the car's server: user
-`me` / `secret`, and the car's player transcoding to Opus 128k.  The app's tests
+`me` / `secret`, and the car's player ("VibeMediaPlayer") transcoding to Opus
+128k, set in Navidrome as the car's server has it.  The app's tests
 in `RealNavidromeTest` then run against it, through a relay that can break the
 connection.  Without a server those tests are skipped, so the release workflow
 doesn't need one.

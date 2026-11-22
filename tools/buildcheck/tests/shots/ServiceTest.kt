@@ -139,19 +139,22 @@ class ServiceTest {
     }
 
     /**
-     * Navidrome picks the transcoding (Opus 128k for the car) by "player" =
-     * client name + User-Agent.  Song downloads must look like the same player
-     * as the app's other requests, or Navidrome sends the original FLAC.
+     * Navidrome knows a "player" by client name + User-Agent, and sends songs
+     * in the transcoding set for that player.  Song downloads look like the
+     * same player as the app's other requests, under the app's own name, and
+     * don't ask for a format or bitrate: that's for the server's owner to set.
      */
     @Test
     fun songsAreFetchedAsTheSamePlayerAsTheLibrary() {
         val server = java.net.ServerSocket(0, 5, java.net.InetAddress.getByName("127.0.0.1"))
         val agents = java.util.Collections.synchronizedList(mutableListOf<String>())
+        val asked = java.util.Collections.synchronizedList(mutableListOf<String>())
         val serving = Thread {
             repeat(2) {
                 server.accept().use { socket ->
                     val reader = socket.getInputStream().bufferedReader()
                     var line = reader.readLine()
+                    asked += line
                     val isStream = line.contains("/rest/stream")
                     while (!line.isNullOrEmpty()) {
                         if (line.startsWith("User-Agent:", ignoreCase = true)) agents += line.substringAfter(':').trim()
@@ -175,6 +178,9 @@ class ServiceTest {
         println("User-Agents: $agents")
         assertEquals(2, agents.size)
         assertEquals("API and song requests must match", agents[0], agents[1])
+        assertTrue("both under the app's name: $asked", asked.size == 2 && asked.all { "&c=VibeMediaPlayer&" in it })
+        val stream = asked.single { "/rest/stream" in it }
+        assertTrue("no format or bitrate asked for: $stream", "format=" !in stream && "maxBitRate" !in stream)
         assertTrue(com.saicmotor.media.service.MediaCache.isCached(app, "sub:x"))
     }
 
