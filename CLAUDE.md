@@ -67,9 +67,9 @@ repository is MintiesJZ/VibeMediaPlayer, and GitHub sends the old address on.
 
 `tools/buildcheck` builds the app's sources with the same dependencies as
 `app/build.gradle` and runs the Robolectric tests in `tools/buildcheck/tests`
-(51 service tests, 31 streaming tests, 3 for `LiveDownload`, 21 screenshot tests →
+(53 service tests, 31 streaming tests, 3 for `LiveDownload`, 21 screenshot tests →
 `tools/buildcheck/app/build/shots`, 8 against a real Navidrome, skipped
-unless one is running: `tools/navidrome/README.md`, and 33 with the car's own
+unless one is running: `tools/navidrome/README.md`, and 34 with the car's own
 launcher, 7 of them with SmartTube too, skipped unless their APKs are
 given: `tools/firmware/README.md`).
 Needs JDK 17, Gradle 8.x, Android SDK platform 34 + build-tools 34
@@ -150,6 +150,14 @@ both skins (`textIsReadableInBothSkins`).
   that app isn't on this firmware.)
   The last source is recorded from the audio-focus bundle
   `key_car_source_type=6` (→ type 0).
+  It restores only once the car's power is on (`power status = 3` in its
+  log, `PMS_PWR_MODE=3` in the car's): in every logged start-up that's as
+  the head unit comes up, but for a remote climate start from the phone
+  app the head unit comes up with nobody in the car, and the restore comes
+  when the car's switched on, maybe 20 minutes later (worked out from the
+  launcher's log lines and what the driver saw: no logcat of one yet).
+  32773 / 32774 only ever came from this restore (`launchSourceLastMode`)
+  in the logs.
 - **Direct boot**: user storage unlocks ~25 s after boot, too late for the
   launcher.  MediaService, the four `mbs` browse services and BootReceiver are
   `directBootAware`; everything they read is in device-protected storage
@@ -417,7 +425,12 @@ both skins (`textIsReadableInBothSkins`).
   starts it itself 25 s after BootReceiver's signal, unless the launcher
   has been in touch this start-up (it asks what the app can play as it
   starts): then it's bringing back another source, e.g. the radio left
-  paused at switch-off, and the app leaves it.
+  paused at switch-off, or waiting for the car to be switched on, and the
+  app leaves it.  Its restore is the start-up however late it comes
+  (`isStartupRequest` isn't timed), as long as MediaService was started as
+  the head unit came up: up to 1.0.21 one after the fallback, or 5 minutes
+  after boot, was taken as an ordinary "pause", and nothing played after a
+  remote climate start.
 - **Stopping unexpectedly** (a crash, or Android short of memory) while
   the music plays: Android starts the service again (START_STICKY, and the
   launcher's connection), and it carries on where it was

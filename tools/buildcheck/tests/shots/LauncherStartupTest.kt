@@ -496,6 +496,37 @@ class LauncherStartupTest {
         assertFalse("the music stays quiet", playing)
     }
 
+    /**
+     * A remote climate start (from the phone app): the head unit comes up
+     * with nobody in the car and the car's power not on, so the launcher
+     * waits.  The car's switched on 20 minutes later: what it brings back
+     * then plays.
+     */
+    @Test
+    fun switchedOnLongAfterTheHeadUnitCameUp() {
+        appWasPlayingAnAlbum()
+        savedAtSwitchOff(playing = false)
+        launcherStarts()
+        drive(1_000)
+        bootReceiverFires()
+        drive(3_000)
+        systemReady(2, 1)
+        systemReady(3, 1)
+        drive(60_000)
+        println("launcher sent while the car's off: $launcherSent")
+        assertEquals("nothing brought back before the car's switched on", 0, restores().size)
+        assertFalse(playing)
+        looper.idleFor(Duration.ofMinutes(20))
+        deliver()
+        systemReady(1, 3)
+        drive(30_000) { playing && s!!.player().isPlaying }
+        println("launcher sent: $launcherSent")
+        assertEquals(1, restores().size)
+        assertTrue(restores()[0].contains("MediaService $SWITCH_PAUSE type 0"))
+        assertFalse("not the radio", launcherSent.any { it.contains("radio") })
+        assertTrue("playing", s!!.player().isPlaying)
+    }
+
     private companion object {
         const val LAUNCHER = "com.saicmotor.launcher"
         const val MEDIA = "com.saicmotor.media"

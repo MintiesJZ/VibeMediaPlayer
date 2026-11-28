@@ -539,6 +539,43 @@ class ServiceTest {
         assertEquals("nothing loaded either", 0, s.player().mediaItemCount)
     }
 
+    /**
+     * The head unit comes up for a remote climate start (from the phone app),
+     * with nobody in the car: the launcher's been in touch, but it brings the
+     * last source back only once the car's switched on, 20 minutes later.
+     * That's still the car starting: the music plays.  (Up to 1.0.21 it was
+     * taken as an ordinary "pause", and nothing played.)
+     */
+    @Test
+    fun switchedOnLongAfterTheHeadUnitCameUpStillPlays() {
+        savePlayingState()
+        val s = service()
+        s.onStartCommand(launcherCommand(CommandParcelable.UPDATE_SOURCE_AVAILABLE), 0, 1)
+        s.onStartCommand(Intent(app, MediaService::class.java).setAction(MediaService.ACTION_BOOT_START), 0, 2)
+        idle(60_000)
+        settle()
+        assertEquals("quiet while the car's off", 0, s.player().mediaItemCount)
+        idle(20 * 60_000)
+        s.restoredByLauncher(CommandParcelable.SWITCH_SOURCE_ONLY_PAUSE)
+        assertEquals("sub:s3", s.player().currentMediaItem?.mediaId)
+        assertTrue("start-up always plays", s.player().playWhenReady)
+    }
+
+    /**
+     * Started again later on (after an update, say, paused): a restore from
+     * the launcher then isn't the car starting, so "paused" stays paused.
+     */
+    @Test
+    fun aRestoreLaterOnIsntTakenForTheCarStarting() {
+        savePlayingState()
+        idle(6 * 60_000)
+        val s = service()
+        s.onStartCommand(launcherCommand(CommandParcelable.SWITCH_SOURCE_ONLY_PAUSE), 0, 1)
+        settle()
+        assertFalse(s.player().playWhenReady)
+        assertEquals(0, s.player().mediaItemCount)
+    }
+
     @Test
     fun networkProblemsAreWaitedOutOtherErrorsAreNot() {
         val policy = com.saicmotor.media.service.WaitForNetworkPolicy()

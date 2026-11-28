@@ -830,7 +830,10 @@ class MediaService : MediaBrowserServiceCompat() {
         // queue ready here (1.0 – 1.0.15) left the launcher's battery diagram
         // orange for the drive, and the launcher asking a second later.
         if (carryOnAfterCrash()) return
-        if (SystemClock.elapsedRealtime() < STARTUP_WINDOW_MS) startTrace(0L)
+        // Started as the head unit came up: the launcher's restore is the car
+        // starting, however late it comes (see isStartupRequest).  Started
+        // later on (after an update, say): its requests aren't a start-up.
+        if (SystemClock.elapsedRealtime() < STARTUP_WINDOW_MS) startTrace(0L) else startupHandled = true
     }
 
 
@@ -2376,12 +2379,16 @@ class MediaService : MediaBrowserServiceCompat() {
         }
     }
 
-    /** True for the launcher's first request after the head unit boots (its start-up restore). */
-    private fun isStartupRequest(): Boolean {
-        if (startupHandled) return false
-        val now = SystemClock.elapsedRealtime()
-        return now < STARTUP_WINDOW_MS || (bootSignalAt > 0 && now - bootSignalAt < STARTUP_WINDOW_MS)
-    }
+    /**
+     * True for the launcher's first request after the head unit boots (its
+     * start-up restore).  The launcher brings the last source back once the
+     * car is switched on, and the head unit can come up long before that:
+     * for a remote climate start from the phone app, with nobody in the car.
+     * So it's not timed: up to 1.0.21 a restore that came after the boot
+     * fallback (25 s), or 5 minutes after the head unit came up, was taken as
+     * an ordinary "pause", and nothing played.
+     */
+    private fun isStartupRequest(): Boolean = !startupHandled
 
     private fun markStartupHandled() {
         startupHandled = true
@@ -2442,7 +2449,9 @@ class MediaService : MediaBrowserServiceCompat() {
      * hasn't within [BOOT_FALLBACK_MS], start the music ourselves, but
      * never over another app that's already playing, nor when the launcher's
      * been in touch this start-up: then it's bringing back another source
-     * (the radio, say, paused as the car left it), which the driver chose.
+     * (the radio, say, paused as the car left it), which the driver chose,
+     * or waiting for the car to be switched on.  Either way its restore, if
+     * it's us, is still the start-up.
      */
     private fun scheduleBootFallback() {
         if (startupHandled || bootFallbackJob != null) return
@@ -2450,7 +2459,6 @@ class MediaService : MediaBrowserServiceCompat() {
             delay(BOOT_FALLBACK_MS)
             bootFallbackJob = null
             if (startupHandled) return@launch
-            startupHandled = true
             val mode  = PlaybackSettings.startupMode(this@MediaService)
             val saved = resumeStore.load()
             Log.i(TAG, "Startup (launcher didn't ask): mode=$mode, last queue=${saved?.kind}")
@@ -2461,6 +2469,7 @@ class MediaService : MediaBrowserServiceCompat() {
                 Log.i(TAG, "Startup: the launcher's bringing back another source — leaving it")
                 return@launch
             }
+            startupHandled = true
             if (player.playWhenReady) return@launch
             traceAuto = true
             if (player.mediaItemCount > 0) {
@@ -2651,7 +2660,8 @@ class MediaService : MediaBrowserServiceCompat() {
         traceFrom = -1L
         val now = SystemClock.elapsedRealtime()
         if (!traceAuto) return                            // started by a press, not at start-up
-        if (now - from > STARTUP_WINDOW_MS * 2) return   // not a start-up any more
+        // Not a start-up any more (the launcher can ask long after the head unit came up: timed from then).
+        if (now - (if (traceLauncherAt >= 0) traceLauncherAt else from) > STARTUP_WINDOW_MS * 2) return
         fun rel(t: Long) = if (t >= 0) t - from else -1L
         val onDisk = if (traceOnDiskPct == PARTLY) "partly" else "$traceOnDiskPct%"
         Log.i(TAG, "Startup timing: launcher asked ${rel(traceLauncherAt)} ms, song loading from ${rel(traceLoadingAt)} ms, " +
