@@ -300,6 +300,9 @@ class MediaService : MediaBrowserServiceCompat() {
         /** Wait this long for the network before giving up. */
         private const val STARTUP_GIVE_UP_MS = 120_000L
         private const val STARTUP_RETRY_MS   = 5_000L
+        /** The start-up's music, refused the speakers, asks again this often, this many times. */
+        private const val SPEAKERS_RETRY_MS  = 500L
+        private const val SPEAKERS_TRIES     = 10
 
         /** Stream failed for a reason other than the network: retry this many times, then skip. */
         private const val MAX_STREAM_RETRIES = 4
@@ -2417,9 +2420,9 @@ class MediaService : MediaBrowserServiceCompat() {
         }
         if (player.mediaItemCount > 0) {
             cancelStartupAction()
-            userPlay()
+            if (startup) startupPlay() else userPlay()
         } else {
-            launchRestore(restoreMode(), resumeStore.load(), play = true)
+            launchRestore(restoreMode(), resumeStore.load(), play = true, keepAsking = startup)
         }
     }
 
@@ -2439,8 +2442,37 @@ class MediaService : MediaBrowserServiceCompat() {
                      !otherAppIsPlaying(ignoreSaic = true)
         Log.i(TAG, "Launcher: restore paused → ${if (resume) "playing (start-up always plays)" else "paused"}")
         when {
-            player.mediaItemCount == 0 -> launchRestore(restoreMode(), resumeStore.load(), play = resume)
-            resume                     -> userPlay()
+            player.mediaItemCount == 0 -> launchRestore(restoreMode(), resumeStore.load(), play = resume, keepAsking = resume)
+            resume                     -> startupPlay()
+        }
+    }
+
+    /** [userPlay] for the start-up: refused the speakers, it asks again ([askAgainForTheSpeakers]). */
+    private fun startupPlay() {
+        userPlay()
+        if (player.playWhenReady || player.mediaItemCount == 0) return
+        startupJob?.cancel()
+        startupJob = serviceScope.launch { askAgainForTheSpeakers() }
+    }
+
+    /**
+     * The start-up's music was refused the speakers: ask again, twice a second
+     * for 5 s.  With the head unit up and the car switched off (a remote
+     * climate start), the car's power service holds them, and as the car's
+     * switched on it lets go of them only a few milliseconds after the
+     * launcher asks for the music.  Runs as the start-up's job, so anything
+     * the driver does stops it; so does another app playing.
+     */
+    private suspend fun askAgainForTheSpeakers() {
+        repeat(SPEAKERS_TRIES) {
+            if (player.playWhenReady || player.mediaItemCount == 0) return
+            delay(SPEAKERS_RETRY_MS)
+            if (player.playWhenReady || otherAppIsPlaying()) return
+            if (requestMediaFocus()) {
+                Log.i(TAG, "Startup: given the speakers on asking again")
+                userPlay()
+                return
+            }
         }
     }
 
@@ -2477,11 +2509,11 @@ class MediaService : MediaBrowserServiceCompat() {
                 if (otherAppIsPlaying()) {
                     Log.i(TAG, "Startup: another app is already playing — leaving it alone")
                 } else {
-                    userPlay()
+                    startupPlay()
                 }
                 return@launch
             }
-            launchRestore(mode, saved, play = true, leaveOthersAlone = true)
+            launchRestore(mode, saved, play = true, leaveOthersAlone = true, keepAsking = true)
         }
     }
 
@@ -2504,12 +2536,14 @@ class MediaService : MediaBrowserServiceCompat() {
      *
      * [play] false: load it paused (only from the saved queue).
      * [leaveOthersAlone]: give up if another app starts playing meanwhile.
+     * [keepAsking]: the car starting: refused the speakers, ask again ([askAgainForTheSpeakers]).
      */
     private fun launchRestore(
         mode:  PlaybackSettings.StartupMode,
         saved: ResumeStore.State?,
         play:  Boolean,
-        leaveOthersAlone: Boolean = false
+        leaveOthersAlone: Boolean = false,
+        keepAsking: Boolean = false
     ) {
         startupJob?.cancel()
         // Asked for the music: the car's own services have started by now.
@@ -2522,7 +2556,10 @@ class MediaService : MediaBrowserServiceCompat() {
                 Log.i(TAG, "Startup: another app is already playing — leaving it alone")
                 return@launch
             }
-            if (saved != null && restoreFromSnapshot(mode, saved, play)) return@launch
+            if (saved != null && restoreFromSnapshot(mode, saved, play)) {
+                if (play && keepAsking) askAgainForTheSpeakers()
+                return@launch
+            }
             if (!play) return@launch
             val started    = SystemClock.elapsedRealtime()
             var resumeGone = false
@@ -2545,7 +2582,10 @@ class MediaService : MediaBrowserServiceCompat() {
                 } else {
                     startLibraryShuffle()
                 }
-                if (done) return@launch
+                if (done) {
+                    if (keepAsking) askAgainForTheSpeakers()
+                    return@launch
+                }
                 if (SystemClock.elapsedRealtime() - started > STARTUP_GIVE_UP_MS) {
                     Log.w(TAG, "Restore: gave up waiting for the server")
                     return@launch

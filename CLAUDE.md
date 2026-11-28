@@ -67,7 +67,7 @@ repository is MintiesJZ/VibeMediaPlayer, and GitHub sends the old address on.
 
 `tools/buildcheck` builds the app's sources with the same dependencies as
 `app/build.gradle` and runs the Robolectric tests in `tools/buildcheck/tests`
-(53 service tests, 31 streaming tests, 3 for `LiveDownload`, 21 screenshot tests →
+(55 service tests, 31 streaming tests, 3 for `LiveDownload`, 21 screenshot tests →
 `tools/buildcheck/app/build/shots`, 8 against a real Navidrome, skipped
 unless one is running: `tools/navidrome/README.md`, and 34 with the car's own
 launcher, 7 of them with SmartTube too, skipped unless their APKs are
@@ -151,13 +151,16 @@ both skins (`textIsReadableInBothSkins`).
   The last source is recorded from the audio-focus bundle
   `key_car_source_type=6` (→ type 0).
   It restores only once the car's power is on (`power status = 3` in its
-  log, `PMS_PWR_MODE=3` in the car's): in every logged start-up that's as
-  the head unit comes up, but for a remote climate start from the phone
-  app the head unit comes up with nobody in the car, and the restore comes
-  when the car's switched on, maybe 20 minutes later (worked out from the
-  launcher's log lines and what the driver saw: no logcat of one yet).
-  32773 / 32774 only ever came from this restore (`launchSourceLastMode`)
-  in the logs.
+  log, `PMS_PWR_MODE=3` in the car's): in a normal start-up that's as the
+  head unit comes up.  For a remote climate start from the phone app the
+  head unit comes up with nobody in the car: the launcher tries every 3 s
+  with `system state = false` and sends nothing, and the restore comes as
+  the car's switched on (`PMS_PWR_MODE` 6 then 3), minutes later.  Until
+  then the car's power service holds the speakers (`USAGE_POWER`), and it
+  lets go of them ~8 ms *after* the restore reaches the app (logged once),
+  so the start-up, refused them, asks again twice a second for 5 s
+  (`askAgainForTheSpeakers`).  32773 / 32774 only ever came from this
+  restore (`launchSourceLastMode`) in the logs.
 - **Direct boot**: user storage unlocks ~25 s after boot, too late for the
   launcher.  MediaService, the four `mbs` browse services and BootReceiver are
   `directBootAware`; everything they read is in device-protected storage

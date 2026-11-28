@@ -562,6 +562,43 @@ class ServiceTest {
     }
 
     /**
+     * As the car's switched on after a remote climate start, its power
+     * service still holds the speakers for a few milliseconds after the
+     * launcher asks for the music: refused them, the start-up asks again
+     * (twice a second, for 5 s), and plays once it's given them.
+     */
+    @Test
+    fun theStartUpAsksAgainForTheSpeakersIfRefused() {
+        val audio = shadowOf(app.getSystemService(android.media.AudioManager::class.java))
+        savePlayingState()
+        val s = service()
+        audio.setNextFocusRequestResponse(android.media.AudioManager.AUDIOFOCUS_REQUEST_FAILED)
+        s.restoredByLauncher(CommandParcelable.SWITCH_SOURCE_ONLY_PAUSE)
+        assertEquals("the queue's back", 8, s.player().mediaItemCount)
+        assertFalse("refused the speakers: paused for now", s.player().playWhenReady)
+        idle(1_200)
+        assertFalse("still refused", s.player().playWhenReady)
+        audio.setNextFocusRequestResponse(android.media.AudioManager.AUDIOFOCUS_REQUEST_GRANTED)
+        idle(600)
+        assertTrue("given them on asking again: playing", s.player().playWhenReady)
+    }
+
+    /** Refused the speakers for longer than that (a phone call): it stops asking, and stays paused. */
+    @Test
+    fun theStartUpStopsAskingForTheSpeakersAfterAFewSeconds() {
+        val audio = shadowOf(app.getSystemService(android.media.AudioManager::class.java))
+        savePlayingState()
+        val s = service()
+        audio.setNextFocusRequestResponse(android.media.AudioManager.AUDIOFOCUS_REQUEST_FAILED)
+        s.restoredByLauncher(CommandParcelable.SWITCH_SOURCE_ONLY_PAUSE)
+        idle(6_000)
+        audio.setNextFocusRequestResponse(android.media.AudioManager.AUDIOFOCUS_REQUEST_GRANTED)
+        idle(3_000)
+        assertFalse(s.player().playWhenReady)
+        assertEquals(8, s.player().mediaItemCount)
+    }
+
+    /**
      * Started again later on (after an update, say, paused): a restore from
      * the launcher then isn't the car starting, so "paused" stays paused.
      */
